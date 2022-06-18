@@ -1,0 +1,24 @@
+#
+# quick and dirty scripting language for calc.exe
+# writtten by T.Pierron, june 2022
+#
+case insensitive
+match wordonly
+
+keyword if then else elseif end for to break continue goto
+
+directive print sin cos tan asin acos atan pow exp log sqrt floor ceil round
+directive exit
+
+constant \d+(\.\d*)?([eE][-+]?\d+)?f? 0[xX]\H+
+special pi E ln2 time now
+
+match noseparator
+
+begin special \"
+constant \\\\ \\n \\t \\r \\b \\" \\x\H+ \\\o\o\o
+error \\e
+end [\"\n]
+
+begin comment #
+end

@@ -1,0 +1,23 @@
+# Object files
+*.o
+*.obj
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+
+# C::B
+*.depend
+*.layout
+*.prefs
+
+/Interface/
+/objd/
+/objs/
+/old/
+/resources/lang/old/

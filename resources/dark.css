@@ -1,0 +1,147 @@
+/*
+ * dark themed stylesheet for an old-school plastic button calculator
+ *
+ * Written by T.Pierron, feb 2022.
+ */
+html    { color: #dfdfdf; font-size: 3vw; background: linear-gradient(to bottom left, #555, #222); padding: 0.5em 1em }
+.dim    { color: white; padding: 1em; text-shadow: 0.1em 0.1em #888; font-size: 1.2em }
+::link,
+.alt    { color: #96acc4 }
+hdr,
+.danger { color: #e37655 }
+
+#units:hover, #title:hover {
+	text-decoration:  underline
+}
+div {
+	 border-top:      0.2em groove #222;
+}
+form {
+	background:       linear-gradient(to bottom, #333, #222);
+	border-radius:    0.5em;
+	box-shadow:       3px -3px 2px black inset, -3px 3px 3px rgba(white, 0.5) inset;
+	padding:          1em;
+	outline:          0.2em solid #111;
+}
+form label.hdr {
+	color:            #ccc
+}
+label {
+	font-weight:      bold;
+	color:            #c3f2ff;
+	text-shadow:      0 0 10px #888, 0 0 10px #888;
+}
+label.dis {
+	color:            rgba(#c3f2ff, 0.5);
+	text-shadow:      none
+}
+label.danger {
+	color:            #e36e86
+}
+button, toggle {
+	padding:          0.3em 0.5em;
+	border:           0.1em solid #888;
+	border-color:     #888 #888 #222 #222;
+	background:       linear-gradient(to top right, #333, #555);
+	border-radius:    0.3em;
+	color:            #dfdfdf;
+	text-transform:   uppercase;
+	text-align:       center;
+	outline:          0.1em solid rgba(#111, 0.5)
+}
+toggle {
+	padding:          0.3em;
+	color:            #96acc4;
+	border-radius:    0
+}
+toggle.first {
+	border-radius:    0.5em 0 0 0.5em
+}
+toggle.last {
+	border-radius:    0 0.5em 0.5em 0
+}
+toggle:active {
+	-outline-margin:  1
+}
+button:active, toggle:active {
+	outline:          0.1em solid rgba(#333, 0.5);
+	background:       selback;
+	color:            selfore;
+	border-color:     #08091a #08091a #878798 #878798;
+	box-shadow:       0 0 5px black inset;
+	left:             1px;
+	top:              1px
+}
+button:disabled {
+	background:       #444 repeating-linear-gradient(-45deg, transparent, transparent 1em, rgba(#ff9086,0.33) 1em, rgba(#ff9086,0.33) 2em);
+	color:            black;
+	text-shadow:      -0.1em 0.1em #888
+}
+button.toggle {
+	outline:          0.1em solid #111;
+	left:             0;
+	top:              0;
+}
+button.toggle:active {
+	outline:          0.1em solid #333;
+}
+button.right {
+	border-radius:    0 0.5em 0.5em 0
+}
+button.center {
+	border-radius:    0
+}
+button.left {
+	border-radius:    0.5em 0 0 0.5em
+}
+/* edit box */
+editbox {
+	padding:          0.2em 0.5em;
+	background-color: #bdc2a4;
+	color:            black;
+	box-shadow:       0 0 3px #222 inset;
+	border:           0.1em solid #888;
+	border-color:     #111 #111 #888 #888
+}
+/* list box */
+listbox, table, #draw, checkbox box {
+	background:       #bdc2a4;
+	color:            black;
+	box-shadow:       0 0 3px #444 inset;
+	border:           0.1em solid #888;
+	border-color:     #111 #111 #888 #888
+}
+listbox td, table td {
+	padding:          0.1em
+}
+listbox td:checked, table td:checked {
+	background-color: rgba(selback, 0.7);
+	color:            selfore
+}
+/* checkbox */
+checkbox {
+	color:            rgba(#c3f2ff, 0.5);
+}
+checkbox box {
+	border-color:     #111 #111 #666 #666;
+	padding:          0.4em 1em;
+	vertical-align:   middle;
+	border-radius:    0.5em;
+	color:            black;
+	background:       no-repeat url(mask:circle.png) 10% 45%, #bdc2a4;
+	background-size:  35%;
+}
+checkbox:checked {
+	color:            #c3f2ff;
+	text-shadow:      0 0 10px #888, 0 0 10px #888;
+}
+checkbox:checked box {
+	background:       no-repeat url(mask:circle.png) 90% 45%, #bdc2a4;
+}
+/* scroll bar */
+hscroll, vscroll {
+	background-color: rgba(black, 0.1)
+}
+vscroll thumb, hscroll thumb {
+	background:       rgba(black, 0.3)
+}
