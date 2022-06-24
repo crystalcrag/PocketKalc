@@ -2,8 +2,8 @@
  * graph.h: public functions to draw a function over a graph.
  */
 
-#ifndef CALC_GRAPH_H
-#define CALC_GRAPH_H
+#ifndef KALC_GRAPH_H
+#define KALC_GRAPH_H
 
 
 void graphInit(SIT_Widget);

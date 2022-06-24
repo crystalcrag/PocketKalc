@@ -4,8 +4,8 @@
  * written by T.Pierron, june 2022
  */
 
-#ifndef CALC_CONFIG_H
-#define CALC_CONFIG_H
+#ifndef KALC_CONFIG_H
+#define KALC_CONFIG_H
 
 void  configRead(STRPTR path);
 void  configSave(void);

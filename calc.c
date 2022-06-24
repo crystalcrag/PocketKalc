@@ -1,5 +1,5 @@
 /*
- * calc.c : mostly contain the callback implementation of ParseExpression.
+ * calc.c : contain the callback implementation of ParseExpression.
  *
  * Written by T.Pierron, Aug 2008.
  */
@@ -60,7 +60,7 @@ static int printbin(DATA8 dest, int max, uint64_t nb)
 	return StrCat(dest, max, 0, p[1] == 0 ? "0" : p + 1);
 }
 
-/* escape some characters before displaying it to the user */
+/* escape some characters before displaying it to the user: you should be able to copy this string as-is into a C program */
 static void formatString(STRPTR dest, STRPTR src, int max)
 {
 	DATA8 s = src;
@@ -103,7 +103,11 @@ static void formatString(STRPTR dest, STRPTR src, int max)
 	else dest[-1] = 0;
 }
 
-/* format a variant to be displayed in the main user interface */
+/*
+ * format a variant to be displayed in the main user interface.
+ * if varName is NULL, result will be formatted such as it can be parsed back by ParseExpression()
+ * (ie: no localization and using FORMAT_DEFAULT).
+ */
 void formatResult(Variant v, STRPTR varName, STRPTR out, int max)
 {
 	DATA8 suffix = NULL;
@@ -223,6 +227,7 @@ void formatResult(Variant v, STRPTR varName, STRPTR out, int max)
 			snprintf(out, max, "%g", v->real64);
 		else
 			snprintf(out, max, "%.20g", v->real64);
+		/* XXX not localized because the mix of , and . in US-en is kind of confusing */
 		break;
 	case TYPE_FLOAT:
 		if (suffix)
@@ -456,6 +461,7 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 	}
 }
 
+/* ParseExpression() front end */
 int evalExpr(STRPTR expr, ParseExprData data)
 {
 	static STRPTR errMsg[] = {
@@ -468,6 +474,7 @@ int evalExpr(STRPTR expr, ParseExprData data)
 		"Not enough memory",
 	};
 
+	/* used to check if a variable has already been "printed" */
 	++ tagFrame;
 
 	int error = ParseExpression(expr, parseExpr, data);

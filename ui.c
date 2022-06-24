@@ -1,5 +1,5 @@
 /*
- * ui.c : user-interface creation/management for the calculator using SITGL/SDL1.
+ * ui.c : user-interface creation/management for PocketKalc using SITGL/SDL1.
  *
  * written by T.Pierron, may 2022.
  */
@@ -514,7 +514,7 @@ static int showHelp(SIT_Widget w, APTR cd, APTR ud)
 	{
 		static TEXT progHelp1[] =
 			"<sec>LOOP:</sec>\n"
-			"<hdr>FOR</hdr> I = 0 <hdr>TO</hdr> 10\n"
+			"<hdr>WHILE</hdr> COND <hdr>DO</hdr>\n"
 			"  # CODE\n"
 			"  <hdr>IF</hdr> COND1 <hdr>THEN continue</hdr>\n"
 			"  <hdr>IF</hdr> COND2 <hdr>THEN break</hdr>\n"
@@ -526,9 +526,9 @@ static int showHelp(SIT_Widget w, APTR cd, APTR ud)
 			"<hdr>LENGTH</hdr>(MyArray) == len\n"
 			"<hdr>REDIM</hdr>(MyArray, len)\n"
 			"MyArray = [0,11,123,\"ABC\"]\n"
-			"<hdr>PUSH</hdr> MyArray, val\n"
+			"<hdr>PUSH</hdr> MyArray expr\n"
 			"<hdr>POP</hdr> MyArray\n"
-			"<hdr>SHIFT</hdr> MyArray, val\n"
+			"<hdr>SHIFT</hdr> MyArray expr\n"
 			"<hdr>UNSHIFT</hdr> MyArray\n"
 		;
 
@@ -981,7 +981,7 @@ static void saveExpr(void)
 }
 
 /*
- * SDL specific code just below
+ * SDL specific code below
  */
 int main(int nb, char * argv[])
 {
@@ -991,6 +991,7 @@ int main(int nb, char * argv[])
 	int           exitProg;
 
 	readPrefs();
+	scriptTest();
 
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
 		return 1;

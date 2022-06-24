@@ -13,6 +13,7 @@
 				<Option compiler="gcc" />
 				<Compiler>
 					<Add option="-g" />
+					<Add option="-DKALC_DEBUG" />
 				</Compiler>
 			</Target>
 			<Target title="Release">
@@ -61,6 +62,7 @@
 		<Unit filename="script.c">
 			<Option compilerVar="CC" />
 		</Unit>
+		<Unit filename="scripttest.h" />
 		<Unit filename="symtable.c">
 			<Option compilerVar="CC" />
 		</Unit>

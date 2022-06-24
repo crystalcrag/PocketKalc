@@ -3,7 +3,7 @@
  *
  * Written by T.Pierron, june 2022.
  */
-html    { color: #dfdfdf; font-size: 3vw; background: linear-gradient(to bottom left, #eee, #bbb); padding: 0.5em 1em }
+html    { color: #dfdfdf; font-size: 3.5vw; background: linear-gradient(to bottom left, #eee, #bbb); padding: 0.5em 1em }
 .dim    { color: white; padding: 1em; text-shadow: 0.1em 0.1em #888; font-size: 1.2em }
 .alt    { color: #96acc4; text-align: left }
 hdr,

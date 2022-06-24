@@ -1,7 +1,7 @@
 
 
-#ifndef EXPR_PARSE_H
-#define EXPR_PARSE_H
+#ifndef KALC_PARSE_H
+#define KALC_PARSE_H
 
 enum /* Return codes of ParseExpression */
 {
@@ -11,12 +11,14 @@ enum /* Return codes of ParseExpression */
 	PERR_TooManyClosingParens,
 	PERR_MissingOperand,
 	PERR_InvalidOperation,
-	PERR_NoMem
+	PERR_NoMem,
+	PERR_LastError
 };
 
 typedef struct Variant_t *       Variant;
 typedef struct Variant_t         VariantBuf;
 typedef struct Result_t *        Result;
+typedef struct ByteCode_t *      ByteCode;
 typedef struct Unit_t *          Unit;
 
 typedef enum /* possible values for 'Variant_t.type' field */
@@ -25,14 +27,15 @@ typedef enum /* possible values for 'Variant_t.type' field */
 	TYPE_INT32,
 	TYPE_DBL,
 	TYPE_FLOAT,
-	TYPE_IDF,
 	TYPE_STR,
 	TYPE_ARRAY,
+	TYPE_IDF,
 	TYPE_OPE,
 	TYPE_FUN,
 	TYPE_ERR
 }	TYPE;
 
+#define TYPE_SCALAR              TYPE_STR
 
 struct Variant_t
 {
@@ -67,6 +70,12 @@ struct Unit_t
 	double  toMetricA;
 	double  toMetricB;
 	APTR    widget;
+};
+
+struct ByteCode_t
+{
+	DATA8   code, exp;
+	int     max, size;
 };
 
 enum /* possible values for Unit_t.cat */
@@ -105,12 +114,14 @@ struct ParseExprData_t
 	STRPTR       assignTo;
 };
 
-int  ParseExpression(DATA8 exp, ParseExpCb cb, APTR data);
-int  evalExpr(STRPTR expr, ParseExprData data);
-void formatResult(Variant v, STRPTR varName, STRPTR out, int max);
-void freeAllVars(void);
-void parseExpr(STRPTR name, Variant v, int store, APTR data);
-void ToString(Variant, DATA8 out, int max);
+int   ParseExpression(DATA8 exp, ParseExpCb cb, APTR data);
+int   evalExpr(STRPTR expr, ParseExprData data);
+void  formatResult(Variant v, STRPTR varName, STRPTR out, int max);
+void  freeAllVars(void);
+void  parseExpr(STRPTR name, Variant v, int store, APTR data);
+void  ToString(Variant, DATA8 out, int max);
+void  ByteCodeGenExpr(STRPTR unused, Variant v, int arity, APTR data);
+DATA8 ByteCodeAdd(ByteCode bc, int size);
 
 extern struct Unit_t units[];
 extern int firstUnits[];

@@ -121,6 +121,9 @@ enum
 #define	SZ_POOL      1024
 #endif
 
+void ByteCodeGenExpr(STRPTR unused, Variant argv, int arity, APTR data);
+void ByteCodeAddVariant(ByteCode, Variant);
+
 /*
  * we are using our own crummy allocator to use mem from stack first, then mem from heap if the former
  * is full (99.9% of expressions will only need stack mem).
@@ -680,8 +683,33 @@ static int MakeOp(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb, APT
 	}
 	MyFree(buffer, PopStack(oper));
 
+	/* script parsing */
+	if (cb == ByteCodeGenExpr)
+	{
+		if ((arg1 && arg1->value.type > TYPE_SCALAR) ||
+		    (arg2 && arg2->value.type > TYPE_SCALAR) ||
+		    (arg3 && arg3->value.type > TYPE_SCALAR) || ope == &functionCall)
+		{
+			/* cannot be evaluated at "compile" time: add into the byte code */
+			VariantBuf argv[4];
+			argv[0].type = TYPE_OPE;
+			argv[0].ope  = ope;
+			if (arg1) argv[1] = arg1->value;
+			if (arg2) argv[2] = arg2->value;
+			if (arg3) argv[3] = arg3->value;
+			cb(NULL, argv, ope->arity, data);
+			arg1->value.type = TYPE_OPE;
+			PushStack(values, arg1);
+			arg1 = NULL;
+			THROW(0);
+		}
+		/* fold constant expressions */
+		eval = True;
+	}
+
 	if (ope == &functionCall)
 	{
+		/* arity is set to 0 for this */
 		MakeCall(buffer, values, cb, data, eval);
 		return 0;
 	}
@@ -806,7 +834,9 @@ static int MakeOp(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb, APT
 		MAKE_OP(*=);
 		break;
 	case 6: /* division / */
-		if (IsNull(&arg2->value)) THROW(PERR_DivisionByZero);
+		if (IsNull(&arg2->value) && arg2->value.type <= TYPE_INT32)
+			/* divide by 0 using integers will cause a CPU exception, but will work on float/double */
+			THROW(PERR_DivisionByZero);
 		MAKE_OP(/=);
 		break;
 	case 7: /* modulus % */
@@ -1090,6 +1120,8 @@ static int MakeOpArray(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb
 }
 #endif
 
+int IsKeyword(DATA8 * start); /*  from script.c */
+
 int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 {
 	uint8_t  buffer[SZ_POOL];
@@ -1105,18 +1137,24 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 
 	GetNumber = appcfg.use64b ? GetNumber64 : GetNumber32;
 
-	for (curpri = error = tok = 0, values = oper = NULL, next = exp; error == 0 && *exp; exp = next)
+	for (curpri = error = tok = 0, values = oper = NULL, next = exp; error == 0 && *exp && *exp != ';'; exp = next)
 	{
 		switch (GetToken(buffer, &object, &next)) {
 		case TOKEN_SCALAR: /* number => stack it */
-			if (tok == TOKEN_SCALAR) error = PERR_SyntaxError;
+			if (tok == TOKEN_SCALAR) THROW(PERR_SyntaxError);
+			if (object->value.type == TYPE_IDF && cb == ByteCodeGenExpr)
+			{
+				DATA8 kwd = object->value.string;
+				if (IsKeyword(&kwd) > 0)
+					goto error_case;
+			}
 			tok = TOKEN_SCALAR;
 			PushStack(&values, object);
 			break;
 		case TOKEN_DECPRI:
-			if (tok == TOKEN_OPERATOR) error = PERR_SyntaxError;
+			if (tok == TOKEN_OPERATOR) THROW(PERR_SyntaxError);
 			curpri -= 30;
-			if (curpri < 0) error = PERR_TooManyClosingParens;
+			if (curpri < 0) THROW(PERR_TooManyClosingParens);
 			break;
 		#if 0
 		case TOKEN_ARRAYSTART:
@@ -1142,7 +1180,7 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 					values->value.type = TYPE_FUN; /* function instead */
 					// no break
 				}
-				else { error = PERR_SyntaxError; break; }
+				else THROW(PERR_SyntaxError);
 			}
 			else { curpri += 30; break; }
 		case TOKEN_OPERATOR:
@@ -1203,10 +1241,25 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 			error = PERR_SyntaxError;
 		}
 	}
+	error_case:
+	if (cb == ByteCodeGenExpr)
+	{
+		/* error recovery similar to javascript */
+		if (error == PERR_SyntaxError)
+			error = 0;
+		/* this is the last character we manage to parse */
+		((ByteCode) data)->exp = exp;
+	}
+
 	while (error == 0 && oper)
 		error = MakeOp(buffer, &values, &oper, cb, data);
 
-	if (error == 0 && values)
+	if (cb == ByteCodeGenExpr)
+	{
+		if (values)
+			ByteCodeAddVariant(data, &values->value);
+	}
+	else if (error == 0 && values)
 	{
 		/* final result */
 		VariantBuf v;
@@ -1219,3 +1272,98 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 	while (values) MyFree(buffer, PopStack(&values));
 	return error;
 }
+
+#define ROUNDTO    512
+
+DATA8 ByteCodeAdd(ByteCode bc, int size)
+{
+	DATA8 mem;
+	if (bc->size + size > bc->max)
+	{
+		int max = (bc->size + size + ROUNDTO - 1) & ~(ROUNDTO-1);
+		mem = realloc(bc->code, max);
+		if (mem == NULL) return NULL;
+		bc->code = mem;
+		bc->max  = max;
+	}
+	mem = bc->code + bc->size;
+	bc->size += size;
+	return mem;
+}
+
+void ByteCodeAddVariant(ByteCode bc, Variant v)
+{
+	APTR arg;
+	int  size;
+	switch (v->type) {
+	case TYPE_INT:    arg = &v->int64;  size = 8; break;
+	case TYPE_INT32:  arg = &v->int32;  size = 4; break;
+	case TYPE_DBL:    arg = &v->real64; size = 8; break;
+	case TYPE_FLOAT:  arg = &v->real32; size = 4; break;
+	case TYPE_STR:
+	case TYPE_IDF:    arg = v->string;  size = strlen(v->string)+1; break;
+	case TYPE_FUN:    arg = NULL; size = 0; break; // TODO
+	default:          return;
+	}
+	size += 3;
+	DATA8 mem = ByteCodeAdd(bc, size);
+	mem[0] = v->type;
+	mem[1] = size >> 8;
+	mem[2] = size & 0xff;
+	memcpy(mem+3, arg, size-3);
+}
+
+/* generate byte code from expression */
+void ByteCodeGenExpr(STRPTR exp, Variant argv, int arity, APTR data)
+{
+	int i = (Operator) argv->ope - OperatorList;
+	/* first: add operator */
+	DATA8 mem = ByteCodeAdd(data, 2);
+	mem[0] = TYPE_OPE;
+	mem[1] = i;
+	for (i = 1; i <= arity; i ++)
+		ByteCodeAddVariant(data, argv + i);
+}
+
+#ifdef KALC_DEBUG
+DATA8 ByteCodeDebug(DATA8 start, DATA8 end)
+{
+	while (start < end)
+	{
+		VariantBuf buf;
+		Operator ope;
+		/* first byte: Variant type (TYPE_*) */
+		switch (start[0]) {
+		case 255: return start + 1;
+		case TYPE_OPE:
+			ope = OperatorList + start[1];
+			fprintf(stderr, "%s ", ope->token);
+			start += 2;
+			continue;
+		case TYPE_INT:
+			memcpy(&buf.int64, start + 3, 8);
+			fprintf(stderr, "%I64d ", buf.int64);
+			break;
+		case TYPE_INT32:
+			memcpy(&buf.int32, start + 3, 4);
+			fprintf(stderr, "%d ", buf.int32);
+			break;
+		case TYPE_DBL:
+			memcpy(&buf.real64, start + 3, 8);
+			fprintf(stderr, "%gd ", buf.real64);
+			break;
+		case TYPE_FLOAT:
+			memcpy(&buf.real32, start + 3, 4);
+			fprintf(stderr, "%g ", buf.real32);
+			break;
+		case TYPE_STR:
+			fprintf(stderr, "\"%s\" ", start + 3);
+			break;
+		case TYPE_IDF:
+			fprintf(stderr, "%s ", start + 3);
+		}
+		start += (start[1] << 8) | start[2];
+	}
+	return start;
+}
+#endif

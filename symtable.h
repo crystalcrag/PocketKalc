@@ -5,8 +5,8 @@
  */
 
 
-#ifndef CALC_SYMTABLE_H
-#define CALC_SYMTABLE_H
+#ifndef KALC_SYMTABLE_H
+#define KALC_SYMTABLE_H
 
 #include "parse.h"
 

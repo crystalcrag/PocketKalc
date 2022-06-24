@@ -1,7 +1,7 @@
 
 
-#ifndef CALC_UI_H
-#define CALC_UI_H
+#ifndef KALC_UI_H
+#define KALC_UI_H
 
 
 typedef struct BatchResult_t *      BatchResult;
@@ -40,7 +40,7 @@ enum
 	ACTION_DELALL
 };
 
-#define APPNAME       "Calculator"
+#define APPNAME       "PocketKalc"
 #define VERSION       "1.1"
 
 #ifdef __GNUC__
