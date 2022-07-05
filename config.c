@@ -81,6 +81,7 @@ void configRead(STRPTR path)
 		appcfg.mode   = mem[5];
 		appcfg.use64b = mem[6];
 		appcfg.lightMode = mem[7];
+		appcfg.defProg   = mem[8];
 		memcpy(appcfg.defUnitNames, mem + 16, sizeof appcfg.defUnitNames);
 	}
 	else /* set default values */
@@ -135,6 +136,7 @@ void configSave(void)
 			mem[5] = appcfg.mode;
 			mem[6] = appcfg.use64b;
 			mem[7] = appcfg.lightMode;
+			mem[8] = appcfg.defProg;
 			memcpy(mem + 16, appcfg.defUnitNames, sizeof appcfg.defUnitNames);
 			if (memcmp(mem, config->oldConfig, sizeof config->oldConfig))
 				chunk->changed = 1;
@@ -179,7 +181,7 @@ DATA8 configAddChunk(STRPTR name, int size)
 {
 	ConfigChunk chunk;
 	/* round up to next chunk multiple */
-	size = (size + SZ_CHUNK - 1) & ~(SZ_CHUNK-1);
+	int padSize = (size + SZ_CHUNK - 1) & ~(SZ_CHUNK-1);
 	for (chunk = HEAD(config->chunks); chunk; NEXT(chunk))
 	{
 		if (strcasecmp(chunk->name, name) == 0)
@@ -187,18 +189,19 @@ DATA8 configAddChunk(STRPTR name, int size)
 			DATA8 mem = chunk->content;
 			if (size > chunk->size)
 			{
-				/* enlarge buffer */
+				/* initial read will alloc the chunk content at once */
 				if (config->content <= mem && mem < config->content + config->size)
 					mem = NULL;
 
-				chunk->content = mem = realloc(mem, size);
+				chunk->content = mem = realloc(mem, padSize);
 				/* might contain some sensitive information */
-				memset(mem + chunk->oldSize, 0, size - chunk->oldSize);
-				chunk->size = size;
+				memset(mem + chunk->size, 0, padSize - chunk->size);
+				chunk->size = padSize;
 			}
 			else if (size < chunk->size)
 			{
 				/* prevent old data from leaking */
+				chunk->size = padSize;
 				memset(chunk->content + size, 0, chunk->size - size);
 			}
 			chunk->changed = 1;

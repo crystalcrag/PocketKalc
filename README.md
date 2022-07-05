@@ -1,19 +1,18 @@
 # PocketKalc - a C-like expression evaluator
 
 As of june 2022, searching for the term "Calculator" on the front page of github.com **returns about 525,000 results**.
-99% of those are just barely functional stub, probably from CS student writing what appears to be their
+99% of those are just barely functional stub, probably from CS students writing what appears to be their
 first assignment. 0.99% are an attempt to mimic the good old pocket calculator from the 1970s, with
-at best 4 or 5 operations available for you to use. The remaining 0.01% are usually extensive
-programming languages with very rich mathematical function libraries, that require months of
-training to be comfortable with.
+at best 4 or 5 operators available for you to use. The remaining 0.01% are fully stacked programming
+languages with a very rich mathematical library, that require months of training to be comfortable with.
 
 
 This program is an attempt to provide a solution that fits right in the middle, while remaining
 **simple to use** by providing a relatively **straightforward user-interface**.
 
 To prevent feature creep and keep **complexity under check**, the constraint was to include an inline
-help system, which was limited to a single screen. Everything must fit inside a single popup window,
-with the same font size than the main user-interface, without any scrollbars, and the information
+help system, which had to be limited to a single screen. Everything must fit inside a single popup window,
+using the same font size than the main user interface (and no scrollbars), with the information
 covering 99% of the features available on a given screen.
 
 Still, this calculator is mostly **oriented toward programmers**. The reason being that it will not
@@ -21,6 +20,11 @@ try to hide the quirks of numerical computation done on the CPU: this progrram w
 is stored in the memory. That's why when you enter `0.1`, it will display `0.10000000000000000555`.
 **This is not a bug**, this is a feature, because that's really how the constant 0.1 is stored on
 the computer: it cannot be represented exactly (or at least, not with IEEE 754 floating points).
+
+Similarly, if you enter `1/2`, it will show you `0` as a result, because it will perform an **integer division**
+between 1 and 2. To do a floating point division, you must enter `1/2.`. Again, this is by design:
+you can copy a C-expression from a program, paste it in this interface and have a result that will
+most probably match what the compiler will generate.
 
 # User-interface
 
@@ -30,7 +34,7 @@ This is more or less what the user-interface looks like, when you start it for t
 
 I couldn't decide which theme I liked the most, so I included both.
 
-To use it, simply enter a C-like expression in the edit box at the bottom of the interface, and the
+To use it, simply enter a **C-like expression** in the edit box at the bottom of the interface, and the
 result should appear in the list above. These are the operators that are supported:
 
 | Precedence | Operator | Description | Associativity |
@@ -78,9 +82,6 @@ operator, which have lower priority than the comparison ones. It means that the 
 will be evaluated as `a & (b == 0)`, which a bit counter-intuitive.
 
 > If you wonder why this is the case, it dates back from the early days of the C programming language, where the `&&` (logical AND) and `||` (logical OR) didn't exist yet, everything was handled using the `&` and `|` operators. At some point, the authors realized that a logical AND/OR operator would be better suited for the language, but since a lot of code have already been written using the `&` and `|`, they kept their precedence as is.
->
-> Interesting how this decision was carried over by some language developed decades later (most notably: Java, Javascript, C# and obviously C++). Fun fact: among the languages that decided to break free from this questionable legacy, there is the Go programming language, where one of its designer was none other than Ken Thomson, co-author of the C programming language (and partly responsible for this decision).
-
 
 With that little bit of trivia out of the way, expressions can use 5 different **scalar datatypes**:
 * **double** : 64bit IEEE 754 floating point.
@@ -95,7 +96,7 @@ used in the computer graphics world, and knowing their limitation is critical to
 glitches. Likewise, integer overflow and/or bitwise operators on signed number produces sometimes
 surprising results.
 
-For example: right shift is a way to divide unsigned integer by a power of two. Applying this on a
+For example: right shift is a way to divide an unsigned integer by a power of two. Applying this on a
 signed number is usually undefined behavior, yet it works on the majority of CPU (and GPU), thanks
 to the 2-complement representation of negative numbers and sign extension. The result of `-4 >> 1`
 will be -2 (as expected). However, due to the same properties, the expression `-1 >> 1` will equal to
@@ -118,10 +119,15 @@ When you enter an expression and don't assign the result to anything, this calcu
 create a new variable for you. These temporary variables starts with $, followed by whatever number
 hasn't been used so far. You can then use these names as a normal variable in any subsequent expression.
 
+![Calulator: spreadsheet lite](https://raw.githubusercontent.com/crystalcrag/WikiResources/main/CalcSpreadSheet.png)
+
 It is then possible to **select an expression line** in the list (not to be confused with a result line, 
 which is indented by 3 spaces). Once selected, if you modify this line, the corresponding result line
-will be updated accordingly. If the variable was used in other expressions, those expression will also
+will be updated accordingly. If the variable was used in other expressions, those expressions will also
 be updated.
+
+In the screenshot above, the first line was selected in the list, then the number 64 was changed into
+32, and you can see that all the subsequent lines that used this result were also updated.
 
 This is, in a nutshell, a very primitive spreadsheet program.
 
@@ -138,7 +144,9 @@ calculator has 4 types of measurements:
 * Angles
 
 By clicking on the "UNITS" label, you'll be able to select the default unit, that any numbers that have
-a unit suffix (displayed below the name of the unit) will be automatically converted to.
+a unit suffix (displayed below the name of the unit) will be automatically converted to:
+
+![Calulator: default units](https://raw.githubusercontent.com/crystalcrag/WikiResources/main/CalculatorUnits.png)
 
 For example, if you are a metric user and want to know how tall 5ft4 is, just enter: `5FT+4IN` and it
 will display `1.6256m` as a result. Likewise, entering `105degF`, will display `40.5556degC`.

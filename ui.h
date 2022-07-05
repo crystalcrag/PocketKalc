@@ -43,6 +43,8 @@ enum
 #define APPNAME       "PocketKalc"
 #define VERSION       "1.1"
 
+#define TAG_STDOUT    ((APTR)1)
+
 #ifdef __GNUC__
  #define COMPILER     "gcc " TOSTRING(__GNUC__) "." TOSTRING(__GNUC_MINOR__) "." TOSTRING(__GNUC_PATCHLEVEL__)
  #ifdef WIN32

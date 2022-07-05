@@ -1,7 +1,7 @@
 /*
  * calc.c : contain the callback implementation of ParseExpression.
  *
- * Written by T.Pierron, Aug 2008.
+ * Written by T.Pierron, may 2022.
  */
 
 #define __MSVCRT_VERSION__     0x0601    // _time64()
@@ -15,6 +15,7 @@
 #include "UtilityLibLite.h"
 #include "parse.h"
 #include "symtable.h"
+#include "script.h"
 #include "config.h"
 
 
@@ -135,10 +136,10 @@ void formatResult(Variant v, STRPTR varName, STRPTR out, int max)
 	else mode = FORMAT_DEFAULT;
 
 	/* check if the number has a unit: compute suffix if yes (will be added after) */
-	if (v->tag > 4)
+	if (v->type < TYPE_STR && v->unit)
 	{
-		int cat = (v->tag >> 8) - 1;
-		int id  = (v->tag >> 4) & 15;
+		int cat = (v->unit >> 4) - 1;
+		int id  = v->unit & 15;
 
 		Unit unit = units + (firstUnits[cat] + id);
 		suffix = unit->suffix;
@@ -308,12 +309,17 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 	ParseExprData expr = data;
 	if (store < 0) /* function call */
 	{
+		store = -store-1;
+		if (scriptExecute(name, store, v))
+		{
+			/* a program with that name exists */
+			return;
+		}
 		int func = FindInList("sin,cos,tan,asin,acos,atan,pow,exp,log,sqrt,floor,ceil,round", name, 0);
 		if (appcfg.use64b)
 		{
-			double arg;
-			store = -store-1;
-			arg = GetArg64(v, 0, store);
+			double arg = GetArg64(v, 0, store);
+			v->type = TYPE_DBL;
 			switch (func) {
 			case  0: v->real64 = sin(arg); break;
 			case  1: v->real64 = cos(arg); break;
@@ -328,16 +334,14 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 			case 10: v->real64 = floor(arg); break;
 			case 11: v->real64 = ceil(arg); break;
 			case 12: v->real64 = round(arg); break;
-			default: v->real64 = 0;
+			default: v->int32 = PERR_UnknownFunction; v->type = TYPE_ERR;
 			}
-			v->type = TYPE_DBL;
 		}
 		else /* use 32bit math functions instead */
 		{
-			float arg;
-			store = -store-1;
-			arg = GetArg32(v, 0, store);
+			float arg = GetArg32(v, 0, store);
 			/* this is mostly to check the limit of 32bit floating point precision */
+			v->type = TYPE_FLOAT;
 			switch (func) {
 			case  0: v->real32 = sinf(arg); break;
 			case  1: v->real32 = cosf(arg); break;
@@ -352,13 +356,13 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 			case 10: v->real32 = floorf(arg); break;
 			case 11: v->real32 = ceilf(arg); break;
 			case 12: v->real32 = roundf(arg); break;
-			default: v->real32 = 0;
+			default: v->int32 = PERR_UnknownFunction; v->type = TYPE_ERR;
 			}
-			v->type = TYPE_FLOAT;
 		}
 	}
 	else if (name == NULL)
 	{
+		/* "print" result */
 		if (expr->cb == NULL)
 		{
 			/* graph mode: just store result */
@@ -366,15 +370,17 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 			return;
 		}
 
+		if (v->type == TYPE_VOID)
+			return;
+
 		/* print result, check if already stored */
 		Result var = expr->assignTo ? symTableFindByName(&symbols, expr->assignTo) : symTableFindByValue(&symbols, v);
 
 		if (var)
 		{
 			/* already stored */
-			int tag = var->bin.tag;
-			var->bin = *v;
-			if (tag == tagFrame)
+			symTableAssign(var, v);
+			if (var->frame == tagFrame)
 				/* already printed */
 				return;
 		}
@@ -402,8 +408,8 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 		if (var)
 		{
 			/* this will mark the variable as already printed: don't do it twice */
-			var->bin.tag = tagFrame;
-			expr->cb(v, var->name);
+			var->frame = tagFrame;
+			expr->cb(&var->bin, var->name);
 		}
 		else expr->cb(v, "");
 	}
@@ -414,6 +420,12 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 
 		if (constant < 0)
 		{
+			if (data == NULL)
+			{
+				/* trying to fold constant expression: this is a user-defined var name: not constant */
+				v->type = TYPE_ERR;
+				return;
+			}
 			if (expr->cb == NULL)
 			{
 				/* graph mode: assign all var to this value */
@@ -433,7 +445,7 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 					var = symTableAdd(&symbols, name, v);
 				else
 					symTableAssign(var, v);
-				var->bin.tag = tagFrame;
+				var->frame = tagFrame;
 				expr->cb(v, var->name);
 			}
 		}
@@ -464,18 +476,8 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 /* ParseExpression() front end */
 int evalExpr(STRPTR expr, ParseExprData data)
 {
-	static STRPTR errMsg[] = {
-		"Syntax error",
-		"Division by zero",
-		"Need an identifier in assignment",
-		"Too many closing parenthesis",
-		"Missing operand",
-		"Invalid expression",
-		"Not enough memory",
-	};
-
 	/* used to check if a variable has already been "printed" */
-	++ tagFrame;
+	tagFrame ++;
 
 	int error = ParseExpression(expr, parseExpr, data);
 	if (error == 0)
@@ -483,6 +485,6 @@ int evalExpr(STRPTR expr, ParseExprData data)
 
 	data->res.type = TYPE_ERR;
 	if (data->cb)
-		data->cb(&data->res, errMsg[error-1]);
+		data->cb(&data->res, errorMessages[error]);
 	return 0;
 }

@@ -135,7 +135,7 @@ DLLIMP Bool       SIT_ListSetCell(SIT_Widget, int row, int col, APTR rowTag, int
 DLLIMP Bool       SIT_ListSetColumn(SIT_Widget, int col, int width, int align, STRPTR label);
 DLLIMP void       SIT_ListSetRowVisibility(SIT_Widget w, int row, Bool visible);
                   /* SIT_EDITBOX */
-DLLIMP int        SIT_TextEditLineLength(SIT_Widget, int line);
+DLLIMP int        SIT_TextEditLineLength(SIT_Widget, int line, int * lineStart);
 DLLIMP int        SIT_TextGetWithSoftline(SIT_Widget, STRPTR buffer, int max);
                   /* clipboard */
 DLLIMP STRPTR     SIT_GetFromClipboard(int * size);

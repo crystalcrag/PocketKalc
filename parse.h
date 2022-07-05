@@ -11,9 +11,14 @@ enum /* Return codes of ParseExpression */
 	PERR_TooManyClosingParens,
 	PERR_MissingOperand,
 	PERR_InvalidOperation,
+	PERR_IndexOutOfRange,
 	PERR_NoMem,
+	PERR_UnknownFunction,
 	PERR_LastError
 };
+
+/* to get a string from PERR_* enum */
+extern STRPTR errorMessages[];
 
 typedef struct Variant_t *       Variant;
 typedef struct Variant_t         VariantBuf;
@@ -32,7 +37,8 @@ typedef enum /* possible values for 'Variant_t.type' field */
 	TYPE_IDF,
 	TYPE_OPE,
 	TYPE_FUN,
-	TYPE_ERR
+	TYPE_ERR,
+	TYPE_VOID
 }	TYPE;
 
 #define TYPE_SCALAR              TYPE_STR
@@ -40,7 +46,11 @@ typedef enum /* possible values for 'Variant_t.type' field */
 struct Variant_t
 {
 	TYPE type;                   /* TYPE_* */
-	int  tag;                    /* padding bytes */
+	union {
+		int eval;                /* TYPE_OPE */
+		int unit;                /* TYPE_INT - TYPE_FLOAT */
+		int lengthFree;          /* TYPE_STRING, TYPE_ARRAY */
+	};
 	union {
 		int64_t   int64;
 		int       int32;
@@ -53,10 +63,15 @@ struct Variant_t
 };
 
 #define MAX_VAR_NAME             32
+#define VAR_LENGTH(variant)      ((variant)->lengthFree & 0x0fffffff)
+#define VAR_TOFREE(variant)      ((variant)->lengthFree & 0x10000000)
+#define VAR_SETFREE(variant)     ((variant)->lengthFree |= 0x10000000)
+
 
 struct Result_t
 {
 	VariantBuf bin;              /* out */
+	int frame;                   /* prevent var from being displayed twice */
 	TEXT name[MAX_VAR_NAME];     /* as stored in symbol table */
 };
 
@@ -122,6 +137,7 @@ void  parseExpr(STRPTR name, Variant v, int store, APTR data);
 void  ToString(Variant, DATA8 out, int max);
 void  ByteCodeGenExpr(STRPTR unused, Variant v, int arity, APTR data);
 DATA8 ByteCodeAdd(ByteCode bc, int size);
+Bool  ByteCodeExe(DATA8 start, DATA8 * end, Bool isTrue, ParseExpCb cb, APTR data);
 
 extern struct Unit_t units[];
 extern int firstUnits[];

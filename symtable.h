@@ -26,6 +26,8 @@ Result symTableFindByName(SymTable, STRPTR varName);
 Result symTableFindByValue(SymTable, Variant);
 void   symTableAssign(Result assignTo, Variant value);
 
+uint32_t crc32(uint32_t crc, DATA8 buf, int max);
+
 
 #endif
 

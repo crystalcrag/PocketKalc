@@ -15,15 +15,42 @@
 
 struct
 {
-	SIT_Widget  progList, statPos;
-	SIT_Widget  progEdit, statSize;
-	SIT_Widget  editName;
-	ConfigChunk curEdit;
-	ListHead    programs;
-	Bool        curProgChanged;
-	int         cancelEdit;
+	SIT_Widget   progList, statPos;
+	SIT_Widget   progEdit, statSize;
+	SIT_Widget   editName, progErr;
+	SIT_Widget   labelStat[4];
+	SIT_Action   checkOk, clearErr;
+	ConfigChunk  curEdit;
+	ListHead     programs;
+	ProgOutput_t output;
+	Bool         curProgChanged, showError;
+	int          cancelEdit, autoIndentPos;
 
 }	script;
+
+STRPTR errorMessages[] = {
+	NULL, /* not an error */
+
+	/* expression evaluation errors (from parse.c) */
+	"Syntax error",
+	"Division by zero",
+	"Invalid assignment",
+	"Too many parenthesis",
+	"Missing operand",
+	"Invalid expression",
+	"Index out of range",
+	"Not enough memory",
+	"Unknown function",
+
+	/* script specific errors */
+	"Duplicate label",
+	"Missing label",
+	"Not inside a loop",
+	"Missing END keyword",
+	"Missing semicolon",
+	"Output overflow"
+};
+
 
 /* colormap used by lexer for script editor */
 static uint8_t colorMap[] = {
@@ -49,7 +76,7 @@ static void scriptSaveChanges(ConfigChunk chunk)
 	memcpy(configAddChunk(chunk->name, length), text, length);
 }
 
-/* list selection changed: show program content */
+/* SITE_OnChange on list: show program content */
 static int scriptSelectProgram(SIT_Widget w, APTR cd, APTR ud)
 {
 	ConfigChunk chunk = cd;
@@ -65,10 +92,25 @@ static int scriptSelectProgram(SIT_Widget w, APTR cd, APTR ud)
 
 		script.curEdit = chunk;
 		script.curProgChanged = 0;
+		appcfg.defProg = index < 0 ? 0 : index;
 		SIT_SetValues(script.progEdit, SIT_Title, chunk ? chunk->content : (DATA8) "", SIT_ReadOnly, cd == NULL, NULL);
 	}
 
 	return 1;
+}
+
+/* clear error message from "Check" button */
+static int scriptClearError(SIT_Widget w, APTR cd, APTR ud)
+{
+	if (script.showError)
+	{
+		int i;
+		for (i = 0; i < DIM(script.labelStat); i ++)
+			SIT_SetValues(script.labelStat[i], SIT_Visible, True, NULL);
+		SIT_SetValues(script.progErr, SIT_Visible, False, NULL);
+		script.showError = False;
+	}
+	return -1;
 }
 
 /* SITE_OnChange callback on progedit: show stat of file edited */
@@ -80,9 +122,34 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 
 	SIT_GetValues(w, SIT_Title, &text, NULL);
 
+	if (script.showError && ! script.clearErr)
+	{
+		double end = FrameGetTime() + 2000;
+		/* cursor moved, clear the err msg after a short while */
+		script.clearErr = SIT_ActionAdd(w, end, end, scriptClearError, NULL);
+	}
+
+	/* auto-indent */
+	if (stat[7] - 1 == script.autoIndentPos && stat[6] > 0 && text[stat[6]-1] == '\n' && text[stat[6]] == '\n')
+	{
+		/* added a newline */
+		DATA8 prev, end;
+		/* get to start of previous line */
+		for (prev = text + stat[6] - 2; prev > text && prev[0] != '\n'; prev --);
+		if (prev > text) prev ++;
+		for (end = prev; *end != '\n' && isspace(*end); end ++);
+		int max = end-prev+1;
+		if (max > sizeof buffer) max = sizeof buffer;
+
+		/* just copy what was on previous line */
+		CopyString(buffer, prev, max);
+		SIT_SetValues(w, SIT_EditAddText, buffer, NULL);
+	}
+	script.autoIndentPos = stat[7];
+
+	/* highlight matching bracket */
 	if (stat[7] > 0)
 	{
-		/* highlight bracket */
 		static char brackets[] = "([{)]}";
 		DATA8  scan = text + stat[6];
 		STRPTR sep  = scan[0] ? strchr(brackets, scan[0]) : NULL;
@@ -127,6 +194,7 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 	}
 	else SYN_MatchBracket(w, 0);
 
+	/* show stat about file */
 	sprintf(buffer, "L:%d C:%d", stat[1]+1, stat[0]);
 	SIT_SetValues(script.statPos,  SIT_Title, buffer, NULL);
 
@@ -316,6 +384,20 @@ static int scriptAdd(SIT_Widget w, APTR cd, APTR ud)
 	return 1;
 }
 
+static int scriptGotoLine(SIT_Widget w, APTR cd, APTR ud)
+{
+	APTR line;
+	SIT_GetValues(script.progErr, SIT_UserData, &line, NULL);
+	if (line)
+	{
+		int start;
+		int len = SIT_TextEditLineLength(script.progEdit, (int) line - 1, &start);
+		SIT_SetValues(script.progEdit, SIT_StartSel, start+len, SIT_EndSel, start, NULL);
+		SIT_SetFocus(script.progEdit);
+ 	}
+	return 1;
+}
+
 /* user clicked on "PROG" tab */
 void scriptShow(SIT_Widget app)
 {
@@ -326,10 +408,12 @@ void scriptShow(SIT_Widget app)
 		script.progEdit = SIT_GetById(app, "progedit");
 		script.statPos  = SIT_GetById(app, "posval");
 		script.statSize = SIT_GetById(app, "sizeval");
+		script.progErr  = SIT_GetById(app, "error");
 
 		SIT_AddCallback(script.progList, SITE_OnChange, scriptSelectProgram, NULL);
 		SIT_AddCallback(script.progList, SITE_OnActivate, scriptRename, NULL);
 		SIT_AddCallback(script.progEdit, SITE_OnChange, scriptEditStat, NULL);
+		SIT_AddCallback(script.progErr,  SITE_OnActivate, scriptGotoLine, NULL);
 		SIT_AddCallback(SIT_GetById(app, "addprog"), SITE_OnActivate, scriptAdd, NULL);
 		SIT_AddCallback(SIT_GetById(app, "delprog"), SITE_OnActivate, scriptDel, NULL);
 
@@ -364,9 +448,88 @@ void scriptShow(SIT_Widget app)
 
 			SIT_ListInsertItem(script.progList, -1, chunk, chunk->name + 1);
 		}
-		SIT_SetValues(script.progList, SIT_SelectedIndex, 0, NULL);
+
+		for (count = 0; count < 4; count ++)
+		{
+			static STRPTR labelNames[] = {"editpos", "posval", "size", "sizeval"};
+			script.labelStat[count] = SIT_GetById(app, labelNames[count]);
+		}
+
+		SIT_SetValues(script.progList, SIT_SelectedIndex, appcfg.defProg, NULL);
 	}
 	SIT_SetFocus(script.progEdit);
+}
+
+static int scriptClearOk(SIT_Widget w, APTR cd, APTR ud)
+{
+	SIT_SetValues(w, SIT_Title, "Check", NULL);
+	return 1;
+}
+
+static void scriptShowError(int errCode, int errLine)
+{
+	if (! script.showError)
+	{
+		script.showError = True;
+
+		/* hide stat, show error line */
+		int i;
+		for (i = 0; i < 4; i ++)
+			SIT_SetValues(script.labelStat[i], SIT_Visible, False, NULL);
+	}
+	if (script.clearErr)
+		SIT_ActionReschedule(script.clearErr, -1, -1), script.clearErr = NULL;
+	TEXT message[128];
+	sprintf(message, "%s (L:%d)", errorMessages[errCode], errLine);
+	SIT_SetValues(script.progErr, SIT_Visible, True, SIT_Title, message, NULL);
+}
+
+
+#ifdef KALC_DEBUG
+static void scriptDebug(ByteCode);
+#endif
+
+/* SITE_OnActive on "check" button: check syntax of current program */
+int scriptCheck(SIT_Widget button, APTR cd, APTR ud)
+{
+	struct ProgByteCode_t code;
+	STRPTR program;
+
+	SIT_GetValues(script.progEdit, SIT_Title, &program, NULL);
+
+	if (IsDef(program))
+	{
+		if (script.checkOk)
+		{
+			/* hide a previous error */
+			SIT_ActionReschedule(script.checkOk, -1, -1);
+			SIT_SetValues(button, SIT_Title, "Check", NULL);
+		}
+		memset(&code, 0, sizeof code);
+		/* this is the function that will check everything */
+		scriptToByteCode(&code, program);
+		if (code.errCode > 0)
+		{
+			int start;
+			int len = SIT_TextEditLineLength(script.progEdit, code.errLine-1, &start);
+			/* error found: highlight the line in the editor and display msg */
+			SIT_SetValues(script.progEdit, SIT_StartSel, start+len, SIT_EndSel, start, NULL);
+			SIT_SetFocus(script.progEdit);
+			scriptShowError(code.errCode, code.errLine);
+		}
+		else
+		{
+			SIT_SetValues(button, SIT_Title, "<ok> </ok> OK", NULL);
+			double end = FrameGetTime() + 3000;
+			script.checkOk = SIT_ActionAdd(button, end, end, scriptClearOk, NULL);
+			#ifdef KALC_DEBUG
+			scriptDebug(&code.bc);
+			#endif
+		}
+		free(code.bc.code);
+	}
+
+	return 1;
 }
 
 /*
@@ -608,11 +771,12 @@ static int scriptFindToken(ProgByteCode prog, DATA8 * start, int lineEnd)
 }
 
 /* main function to convert string into bytecode */
-static void scriptToByteCode(ProgByteCode prog, DATA8 source)
+void scriptToByteCode(ProgByteCode prog, DATA8 source)
 {
 	ProgState state;
 	ListHead  states;
 	DATA8     mem, prev;
+	STOKEN    lastToken;
 
 	state = alloca(sizeof *state);
 	memset(state, 0, sizeof *state);
@@ -621,6 +785,7 @@ static void scriptToByteCode(ProgByteCode prog, DATA8 source)
 	ListAddTail(&states, &state->node);
 
 	prog->line = 1;
+	lastToken = STOKEN_SPACES;
 	for (mem = prev = source; mem[0]; )
 	{
 		STOKEN token;
@@ -643,6 +808,8 @@ static void scriptToByteCode(ProgByteCode prog, DATA8 source)
 			mem ++;
 			prev = mem;
 		}
+		if (mem[0] == 0)
+			break; /* done */
 
 		if (mem[0] == '#')
 		{
@@ -655,17 +822,26 @@ static void scriptToByteCode(ProgByteCode prog, DATA8 source)
 
 		token = scriptFindToken(prog, &mem, state->pendingEnd ? state->line : 0);
 
+		if (token == STOKEN_SPACES)
+			continue;
+
 		if (token == STOKEN_EXPR)
 		{
 			DATA8 p;
 			/* check if it is an IMMEXPR instead: expression must be on same line than a previous token */
 			for (p = prev - 1; p >= source && *p != '\n' && isspace(*p); p --);
 			if (p >= source && *p != '\n')
+			{
 				/* this will spare you from writing "END" token */
 				token = STOKEN_IMMEXPR;
+				if ((lastToken == STOKEN_EXPR || lastToken == STOKEN_IMMEXPR) && *p != ';')
+				{
+					/* this is most likely a mis-spelled instruction */
+					prog->errCode = PERR_MissingSeparator;
+					return;
+				}
+			}
 		}
-		if (token == STOKEN_SPACES)
-			continue;
 
 		if (token < 0)
 		{
@@ -729,6 +905,13 @@ static void scriptToByteCode(ProgByteCode prog, DATA8 source)
 		/* alloc byte for instruction */
 		if (token < DIM(tokenSize) && tokenSize[token] > 0)
 		{
+			if (prog->bc.size + tokenSize[token] > MAX_SCRIPT_SIZE)
+			{
+				/* 64K of bytecode per program is the max :-/ seriously, split your code into sub-functions */
+				prog->errCode = PERR_NoMem;
+				return;
+			}
+
 			inst = ByteCodeAdd(&prog->bc, tokenSize[token]);
 			inst[0] = token;
 			if (tokenSize[token] > 1)
@@ -737,6 +920,7 @@ static void scriptToByteCode(ProgByteCode prog, DATA8 source)
 				inst[1] = inst[2] = 0;
 			}
 		}
+		else inst = NULL;
 
 		/* this part is the semantic analyzer */
 		switch (token) {
@@ -817,6 +1001,9 @@ static void scriptToByteCode(ProgByteCode prog, DATA8 source)
 		default: break;
 		}
 
+		/* at this point the token was accepted by the grammar: keep track of the line it occur in case of error */
+		prog->errLine = prog->line;
+		lastToken = token;
 		state->grammar = grammar - scriptGrammar;
 		switch (grammar[1]) {
 		case PUSH:
@@ -918,22 +1105,221 @@ ProgByteCode scriptGenByteCode(STRPTR prog)
 {
 	ConfigChunk chunk;
 	ProgByteCode list;
+	uint32_t crc = crc32(0, prog, -1);
 	for (list = HEAD(script.programs); list; NEXT(list))
-		if (strcasecmp(list->name, prog) == 0) return list;
+	{
+		if (strcasecmp(list->name, prog) == 0)
+		{
+			if (list->crc32 == crc)
+				return list;
+			else
+				break;
+		}
+	}
 
 	/* not yet compiled: do it now */
 	for (chunk = HEAD(config->chunks); chunk; NEXT(chunk))
 	{
 		if (chunk->name[0] == '$' && strcasecmp(chunk->name + 1, prog) == 0)
 		{
-			list = calloc(sizeof *list, 1);
-			ListAddHead(&script.programs, &list->node);
+			if (list == NULL)
+			{
+				list = calloc(sizeof *list, 1);
+				ListAddHead(&script.programs, &list->node);
+			}
 			CopyString(list->name, prog, sizeof list->name);
 			scriptToByteCode(list, chunk->content);
-			return list;
+			if (list->errCode == 0)
+				return list;
+
+			free(list->bc.code);
+			memset(&list->bc, 0, sizeof list->bc);
+			break;
 		}
 	}
 	return NULL;
+}
+
+/* do not dump output of program directly into main interface: it needs to be sandboxed */
+static Bool scriptAddOutput(STRPTR output)
+{
+	int length = strlen(output);
+
+	if (length == 0) return True;
+	if (length + script.output.usage + 1 > script.output.max)
+	{
+		int max = (length + script.output.usage + 512) & ~511;
+		if (max > 64*1024) return False;
+		script.output.buffer = realloc(script.output.buffer, max);
+		script.output.max = max;
+	}
+
+	strcpy(script.output.buffer + script.output.usage, output);
+	script.output.usage += length;
+
+	return True;
+}
+
+
+static void scriptGetVar(STRPTR name, Variant v, int store, APTR data)
+{
+	ProgByteCode prog = data;
+
+	if (store < 0) /* function call */
+	{
+		parseExpr(name, v, store, NULL);
+	}
+	else if (name == NULL)
+	{
+		/* this is the result */
+		switch (prog->curInst) {
+		case STOKEN_PRINT:
+			switch (v->type) {
+			case TYPE_INT:
+			case TYPE_INT32:
+			case TYPE_FLOAT:
+			case TYPE_DBL:
+				{
+					TEXT buffer[64];
+					formatResult(v, NULL, buffer, sizeof buffer);
+					if (! scriptAddOutput(buffer))
+						prog->errCode = PERR_StdoutFull;
+				}
+				break;
+			case TYPE_STR:
+				if (! scriptAddOutput(v->string))
+					prog->errCode = PERR_StdoutFull;
+				break;
+			case TYPE_ARRAY:
+				// TODO
+			default:
+				break;
+			}
+			break;
+		case STOKEN_RETURN:
+			memcpy(prog->returnVal, v, sizeof *v);
+			if (v->type == TYPE_STR)
+			{
+				VAR_SETFREE(v);
+				v->string = strdup(v->string);
+			}
+			// XXX need to duplicate array too
+		}
+	}
+	else /* get variable value */
+	{
+		Result var = symTableFindByName(&prog->symbols, name);
+
+		if (store == 0)
+		{
+			/* non-existant variable == integer 0 */
+			if (var) memcpy(v, &var->bin, sizeof *v);
+			else     memset(v, 0, sizeof *v);
+		}
+		else
+		{
+			if (var == NULL)
+				var = symTableAdd(&prog->symbols, name, v);
+			else
+				symTableAssign(var, v);
+		}
+	}
+}
+
+void scriptResetStdout(void)
+{
+	script.output.usage = 0;
+}
+
+void addOutputToList(STRPTR line);
+
+/* function to execute bytecode /!\ multi-thread context do not use SIGTL API here */
+Bool scriptExecute(STRPTR progName, int argc, Variant argv)
+{
+	ProgByteCode prog = scriptGenByteCode(progName);
+
+	if (prog)
+	{
+		/* default variables */
+		VariantBuf args = {.type = TYPE_ARRAY, .lengthFree = argc, .array = alloca(sizeof argv * argc)};
+		DATA8 inst, eof;
+		int i, retValSet;
+
+		for (i = 0; i < argc; i ++)
+			args.array[i] = argv + i;
+
+		prog->returnVal = argv;
+		symTableAdd(&prog->symbols, "ARGV", &args);
+
+		for (inst = prog->bc.code, eof = inst + prog->bc.size, retValSet = 0; inst < eof && ! prog->errCode; )
+		{
+			switch (inst[0]) {
+			case STOKEN_IF:
+				i = (inst[1] << 8) | inst[2];
+				prog->curInst = STOKEN_SPACES;
+				if (! ByteCodeExe(inst + 3, &inst, True, scriptGetVar, prog))
+					/* skip if block */
+					inst = prog->bc.code + i;
+				break;
+			case STOKEN_EXPR:
+				/* don't care about result, user has to assign this to a variable */
+				ByteCodeExe(inst + 1, &inst, False, scriptGetVar, prog);
+				if (prog->curInst == STOKEN_RETURN)
+				{
+					retValSet = 1;
+					goto break_all;
+				}
+				prog->curInst = STOKEN_SPACES;
+				continue;
+			case STOKEN_GOTO:
+				inst = prog->bc.code + ((inst[1] << 8) | inst[2]);
+				break;
+			case STOKEN_EXIT:
+				goto break_all;
+				break;
+			case STOKEN_RETURN:
+				prog->curInst = STOKEN_RETURN;
+				break;
+			case STOKEN_PRINT:
+				prog->curInst = STOKEN_PRINT;
+				break;
+			default:
+				symTableFree(&prog->symbols);
+				return False;
+			}
+			inst += tokenSize[inst[0]];
+		}
+
+		break_all:
+		symTableFree(&prog->symbols);
+		if (prog->errCode > 0)
+		{
+			/* bubble the error back to caller */
+			argv->type = TYPE_ERR;
+			argv->int32 = prog->errCode;
+		}
+		else
+		{
+			/* all is good so far, dump output to main interface */
+			DATA8 output, next;
+			for (output = script.output.buffer, eof = output + script.output.usage; output < eof; output = next)
+			{
+				for (next = output; next < eof && *next != '\n'; next ++);
+				if (*next) *next ++= 0;
+				if (*output) addOutputToList(output);
+			}
+			script.output.usage = 0;
+
+			if (! retValSet)
+			{
+				/* force integer void value */
+				memset(argv, 0, sizeof *argv);
+				argv->type = TYPE_VOID;
+			}
+		}
+		return True;
+	}
+	return False;
 }
 
 /* no need to bloat this file */

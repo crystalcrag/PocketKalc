@@ -140,12 +140,13 @@ static void freeRowTag(RowTag tag)
 static int copyLine(SIT_Widget w, APTR cd, APTR ud)
 {
 	STRPTR text = NULL;
-	RowTag tag = cd;
 	int    row = -1;
 	SIT_GetValues(w, SIT_SelectedIndex, &row, NULL);
 	if (row >= 0)
 	{
-		if (tag)
+		RowTag tag;
+		SIT_GetValues(w, SIT_RowTag(row), &tag, NULL);
+		if (tag && tag != TAG_STDOUT)
 		{
 			/* result line */
 			text = alloca(128);
@@ -158,8 +159,9 @@ static int copyLine(SIT_Widget w, APTR cd, APTR ud)
 
 		SIT_SetFocus(ctrls.edit);
 		SIT_SetValues(ctrls.edit, SIT_Title, text, SIT_StartSel, strlen(text), NULL);
+		return 1;
 	}
-	return 1;
+	return 0;
 }
 
 /* show errors within list in different color (SIT_CellPaint callback) */
@@ -168,7 +170,7 @@ static int highlightError(SIT_Widget w, APTR cd, APTR ud)
 	SIT_OnCellPaint * paint = cd;
 	RowTag tag;
 	SIT_GetValues(w, SIT_RowTag(paint->rowColumn>>8), &tag, NULL);
-	if (tag && tag->res.type == TYPE_ERR)
+	if (tag && tag != TAG_STDOUT && tag->res.type == TYPE_ERR)
 		memcpy(paint->fgColor, "\xff\x00\x00\xff", 4);
 
 	return 0;
@@ -189,17 +191,24 @@ static int selectLine(int keycode)
 }
 
 /* format <v> to be displayed in list box */
-static void formatExprToList(Variant v, STRPTR varName)
+void formatExprToList(Variant v, STRPTR varName)
 {
 	RowTag tag = allocRowTag();
 	TEXT   buffer[128];
 
-	formatResult(v, varName, buffer, sizeof buffer);
 	tag->res = *v;
 	tag->var = varName;
+	formatResult(&tag->res, varName, buffer, sizeof buffer);
 
 	int item = SIT_ListInsertItem(ctrls.list, ctrls.insertAt, tag, buffer);
 	SIT_SetValues(ctrls.list, SIT_MakeVisible, item, NULL);
+}
+
+void addOutputToList(STRPTR line)
+{
+	int item = SIT_ListInsertItem(ctrls.list, ctrls.insertAt, TAG_STDOUT, line);
+	SIT_SetValues(ctrls.list, SIT_MakeVisible, item, NULL);
+	if (ctrls.insertAt >= 0) ctrls.insertAt ++;
 }
 
 /* expression on an existing line has changed: redo operation and update results */
@@ -321,7 +330,7 @@ static Bool addExprToList(STRPTR expr)
 
 				/* check if there was a meaningful result */
 				SIT_GetValues(ctrls.list, SIT_RowTag(index+1), &tag, NULL);
-				if (tag && tag->res.type != TYPE_ERR && tag->var)
+				if (tag && tag != TAG_STDOUT && tag->res.type != TYPE_ERR && tag->var)
 				{
 					/* we might have to propagate the result to the following rows */
 					propagateResult(tag, index + 1);
@@ -335,6 +344,7 @@ static Bool addExprToList(STRPTR expr)
 	ctrls.insertAt = -1;
 	SIT_SetValues(ctrls.list, SIT_SelectedIndex, -1, NULL);
 	SIT_ListInsertItem(ctrls.list, -1, NULL, expr);
+	scriptResetStdout();
 	evalExpr(expr, &data);
 	return True;
 }
@@ -498,6 +508,7 @@ static int showHelp(SIT_Widget w, APTR cd, APTR ud)
 			"<br>"
 			"<hdr>Shortcuts:</hdr><br>"
 			"- F1, F2, F3: select calc/graph/prog.<br>"
+			"- F4: check program syntax.<br>"
 			"- ALT+1,2,3,4: select display mode.<br>"
 			"- Shift+DEL: delete selected line.<br>"
 			"- Ctrl+Shift+BS: delete all."
@@ -569,7 +580,12 @@ static int setTab(SIT_Widget w, APTR cd, APTR ud)
 	SIT_SetValues(SIT_GetById(w, "/tabs"), SIT_TabActive, appcfg.mode, NULL);
 	switch (appcfg.mode) {
 	case MODE_GRAPH:
+		SIT_SetValues(ctrls.edit, SIT_Title, graphGetFunc(), NULL);
+		goto case_common;
 	case MODE_EXPR:
+		if (! copyLine(ctrls.list, NULL, NULL))
+			SIT_SetValues(ctrls.edit, SIT_Title, "", NULL);
+	case_common:
 		SIT_SetFocus(ctrls.edit);
 		/* clear selection set by SIT_SetFocus() */
 		SIT_SetValues(ctrls.edit, SIT_StartSel, 1000000, NULL);
@@ -751,7 +767,7 @@ static void createUI(SIT_Widget app)
 		{SITK_FlagCapture + SITK_F1, SITE_OnActivate, 0, "expr"},
 		{SITK_FlagCapture + SITK_F2, SITE_OnActivate, 0, "graph"},
 		{SITK_FlagCapture + SITK_F3, SITE_OnActivate, 0, "prog"},
-		{SITK_FlagCapture + SITK_F5, SITE_OnActivate, 0, "f64"},
+		{SITK_FlagCapture + SITK_F4, SITE_OnActivate, 0, "check"},
 
 		{SITK_FlagCapture + SITK_FlagAlt + '1', SITE_OnActivate, 0, "auto"},
 		{SITK_FlagCapture + SITK_FlagAlt + '2', SITE_OnActivate, 0, "bin"},
@@ -815,9 +831,12 @@ static void createUI(SIT_Widget app)
 			"<button name=addprog tabNum=4 title=Add left=FORM bottom=FORM nextCtrl=NONE>"
 			"<button name=delprog.danger tabNum=4 title=Del left=WIDGET,addprog,0.3em top=OPPOSITE,addprog nextCtrl=NONE>"
 			"<label name=editpos.danger tabNum=4 title=Pos: left=WIDGET,delprog,0.3em top=MIDDLE,addprog>"
-			"<label name=posval tabNum=4 width=8em left=WIDGET,editpos,0.3em top=MIDDLE,addprog>"
+			"<label name=posval tabNum=4 width=7em left=WIDGET,editpos,0.3em top=MIDDLE,addprog>"
 			"<label name=size.danger tabNum=4 title=SIZE: left=WIDGET,posval,0.3em top=MIDDLE,addprog>"
 			"<label name=sizeval tabNum=4 left=WIDGET,size,0.3em top=MIDDLE,addprog>"
+			"<button name=check tabNum=4 title=Check right=FORM top=OPPOSITE,addprog>"
+			"<label name=error tabNum=4 overflow=", SITV_Hidden, "left=WIDGET,delprog,0.3em right=WIDGET,check,0.3em"
+			" top=MIDDLE,check visible=0 style='white-space: pre'>"
 
 			"<listbox name=proglist nextCtrl=NONE tabNum=4 left=FORM top=FORM bottom=WIDGET,addprog,0.3em right=OPPOSITE,delprog"
 			" listBoxFlags=", SITV_SelectAlways, ">"
@@ -869,6 +888,7 @@ static void createUI(SIT_Widget app)
 	SIT_AddCallback(SIT_GetById(app, "f64"),   SITE_OnActivate, disaLabel, SIT_GetById(app, "f32"));
 	SIT_AddCallback(SIT_GetById(app, "help"),  SITE_OnActivate, showHelp, NULL);
 	SIT_AddCallback(SIT_GetById(app, "cls"),   SITE_OnActivate, redirect, (APTR) ACTION_DELALL);
+	SIT_AddCallback(SIT_GetById(app, "check"), SITE_OnActivate, scriptCheck, NULL);
 	SIT_AddCallback(ctrls.list,  SITE_OnChange, copyLine, NULL);
 	SIT_AddCallback(ctrls.calc,  SITE_OnActivate, redirect, (APTR) ACTION_ACCEPT);
 	SIT_SetValues(ctrls.list, SIT_CellPaint, highlightError, NULL);
@@ -891,6 +911,7 @@ static void createUI(SIT_Widget app)
 			else data.assignTo = NULL;
 			ctrls.insertAt = -1;
 			SIT_ListInsertItem(ctrls.list, -1, NULL, exprList + 1);
+			scriptResetStdout();
 			evalExpr(exprList + 1, &data);
 			exprList = strchr(exprList, 0) + 1;
 		}
@@ -961,7 +982,7 @@ static void saveExpr(void)
 				prev[0] = 0;
 				mem += sprintf(mem + 1, "%s", SIT_ListGetCellText(ctrls.list, 0, i)) + 2;
 			}
-			else if (tag->var && tag->var[0] == '$')
+			else if (tag != TAG_STDOUT && tag->var && tag->var[0] == '$')
 			{
 				/* keep this expression assigned to the same temp var */
 				prev[0] = atoi(tag->var+1);
@@ -991,7 +1012,7 @@ int main(int nb, char * argv[])
 	int           exitProg;
 
 	readPrefs();
-	scriptTest();
+//	scriptTest();
 
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0)
 		return 1;
@@ -1004,7 +1025,7 @@ int main(int nb, char * argv[])
 		fprintf(stderr, "failed to set video mode, aborting.\n");
 		return 1;
 	}
-	SDL_WM_SetCaption("Calculator", "Calculator");
+	SDL_WM_SetCaption(APPNAME, APPNAME);
 
 	app = SIT_Init(SIT_NVG_FLAGS, appcfg.width, appcfg.height, appcfg.lightMode == 1 ? "resources/light.css" : "resources/dark.css", 1);
 

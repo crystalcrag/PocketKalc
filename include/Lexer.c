@@ -275,12 +275,12 @@ int SYN_HighlightText(SIT_Widget w, APTR cd, APTR ud)
 		SIT_GetValues(w, SIT_Title, &text, NULL);
 		for (i = lex->lastLine, byte = lex->lastByte; i < line; i ++, byte += length)
 		{
-			length = SIT_TextEditLineLength(w, i);
+			length = SIT_TextEditLineLength(w, i, NULL);
 			STARTSTATE(lex, i+1) = SYN_Exec(cfa, text + byte, length, 0, STARTSTATE(lex, i), NULL, 0, length);
 		}
 	}
 	/* this is where the magic happens */
-	int last = SYN_Exec(cfa, msg->textBuffer, msg->length, SIT_TextEditLineLength(w, line+1), STARTSTATE(lex, line), msg->lexerCMap, 0, msg->length);
+	int last = SYN_Exec(cfa, msg->textBuffer, msg->length, SIT_TextEditLineLength(w, line+1, NULL), STARTSTATE(lex, line), msg->lexerCMap, 0, msg->length);
 	int prev = STARTSTATE(lex, line+1);
 	STARTSTATE(lex, line+1) = last;
 

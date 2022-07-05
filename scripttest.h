@@ -99,8 +99,8 @@ void scriptTest(void)
 		"   K ++\n"
 		"END\n"
 		"RETURN J"
-
 	};
+
 	/* sample programs converted to byte code (note: suppose little endian and use64b enabled) */
 	static uint8_t byteCode[] = {
 		111,

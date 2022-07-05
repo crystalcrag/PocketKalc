@@ -43,6 +43,7 @@ struct ConfigApp_t
 	uint16_t width, height;
 	int      format, use64b;
 	int      mode, lightMode;
+	int      defProg;
 	uint8_t  defUnitNames[32];
 	int      defUnits[4];
 };

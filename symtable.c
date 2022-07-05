@@ -17,7 +17,6 @@ uint32_t crc32(uint32_t crc, DATA8 buf, int max)
 {
 	static uint32_t crctable[256];
 
-	int len = max < 0 ? strlen(buf) + 1 : max;
 	crc = crc ^ 0xffffffffL;
 	if (crctable[0] == 0)
 	{
@@ -30,10 +29,18 @@ uint32_t crc32(uint32_t crc, DATA8 buf, int max)
 		}
 	}
 
-	while (len > 0)
+	if (max > 0)
 	{
-		crc = crctable[(crc ^ (*buf++)) & 0xff] ^ (crc >> 8);
-		len --;
+		while (max > 0)
+		{
+			crc = crctable[(crc ^ (*buf++)) & 0xff] ^ (crc >> 8);
+			max --;
+		}
+	}
+	else /* string */
+	{
+		while (buf[0])
+			crc = crctable[(crc ^ (*buf++)) & 0xff] ^ (crc >> 8);
 	}
 	return crc ^ 0xffffffffL;
 }
@@ -41,7 +48,12 @@ uint32_t crc32(uint32_t crc, DATA8 buf, int max)
 void symTableAssign(Result var, Variant v)
 {
 	if (var->bin.type == TYPE_STR)
+	{
+		if (var->bin.string == v->string)
+			/* already done */
+			return;
 		free(var->bin.string);
+	}
 	var->bin = *v;
 	if (v->type == TYPE_STR)
 		var->bin.string = strdup(v->string);
@@ -103,7 +115,7 @@ void symTableFree(SymTable syms)
 {
 	SymTable list, next;
 
-	for (list = syms, next = syms->next; list; list = next)
+	for (list = syms; list; list = next)
 	{
 		/* need to free strings though */
 		int i;
@@ -114,11 +126,27 @@ void symTableFree(SymTable syms)
 				free(res->bin.string);
 		}
 
+		next = list->next;
 		if (list == syms) free(list->symbols);
 		else free(list);
 	}
 
 	memset(syms, 0, sizeof *syms);
+}
+
+void synTableDump(SymTable syms)
+{
+	SymTable list;
+	for (list = syms; list; list = list->next)
+	{
+		int i;
+		for (i = 0; i < MAX_HASH_CAPA; i ++)
+		{
+			Result res = list->symbols + i;
+			if (res->bin.type == TYPE_STR)
+				fprintf(stderr, "%s = %s\n", res->name, res->bin.string);
+		}
+	}
 }
 
 /* check if variable <name> is already defined */
