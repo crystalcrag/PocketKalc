@@ -24,11 +24,11 @@ extern "C" {
 #endif
 
 #ifdef __GNUC__
-#define	SENTINEL                     __attribute__ ((sentinel))
-#define PRINTFWARN(posfmt, posarg)   __attribute__ ((format(printf,posfmt,posarg)))
+#define	SIT_SENTINEL                     __attribute__ ((sentinel))
+#define SIT_PRINTFWARN(posfmt, posarg)   __attribute__ ((format(printf,posfmt,posarg)))
 #else
-#define SENTINEL
-#define PRINTFWARN(posfmt, posarg)
+#define SIT_SENTINEL
+#define SIT_PRINTFWARN(posfmt, posarg)
 #endif
 
 /* basic datatypes (plus those defined in UtilityLibLite.h) */
@@ -82,23 +82,23 @@ typedef enum                     /* return code from SIT_RenderNodes() */
  * all public functions of this library, check main documentation for details
  */
 DLLIMP SIT_Widget SIT_Init(int nvgFlags, int width, int height, STRPTR theme, int _1_if_theme_is_path_0_if_string);
-DLLIMP SIT_Widget SIT_CreateWidget(STRPTR name, SIT_TYPE type, SIT_Widget parent, ...) SENTINEL;
+DLLIMP SIT_Widget SIT_CreateWidget(STRPTR name, SIT_TYPE type, SIT_Widget parent, ...) SIT_SENTINEL;
 DLLIMP SIT_Widget SIT_GetById(SIT_Widget parent, STRPTR name);
 DLLIMP SIT_Widget SIT_GetFocus(void);
 DLLIMP STRPTR     SIT_GetError(void);
 DLLIMP void       SIT_Nuke(int what);
 DLLIMP void       SIT_Exit(int code);
 DLLIMP void       SIT_Free(APTR pointer);
-DLLIMP void       SIT_Log(int level, STRPTR fmt, ...) PRINTFWARN(2,3);
+DLLIMP void       SIT_Log(int level, STRPTR fmt, ...) SIT_PRINTFWARN(2,3);
 DLLIMP SIT_RENDER SIT_RenderNodes(double time_in_ms);
 DLLIMP void       SIT_RenderNode(SIT_Widget root);
 DLLIMP Bool       SIT_CreateWidgets(SIT_Widget parent, STRPTR fmt, ...);
 DLLIMP void       SIT_RemoveWidget(SIT_Widget);
-DLLIMP Bool       SIT_AddCallback(SIT_Widget, int type, SIT_CallProc, APTR data);
+DLLIMP void       SIT_AddCallback(SIT_Widget, int type, SIT_CallProc, APTR data);
 DLLIMP void       SIT_DelCallback(SIT_Widget, int type, SIT_CallProc, APTR data);
 DLLIMP int        SIT_ApplyCallback(SIT_Widget, APTR cd, int type);
-DLLIMP void       SIT_SetValues(SIT_Widget, ...) SENTINEL;
-DLLIMP void       SIT_GetValues(SIT_Widget, ...) SENTINEL;
+DLLIMP void       SIT_SetValues(SIT_Widget, ...) SIT_SENTINEL;
+DLLIMP void       SIT_GetValues(SIT_Widget, ...) SIT_SENTINEL;
 DLLIMP void       SIT_SetAttributes(SIT_Widget parent, STRPTR fmt, ...);
 DLLIMP void       SIT_SetFocus(SIT_Widget);
 DLLIMP void       SIT_CloseDialog(SIT_Widget);
@@ -120,7 +120,7 @@ DLLIMP int        SIT_ComboDeleteItem(SIT_Widget, int index);
 DLLIMP APTR       SIT_ComboGetRowTag(SIT_Widget, int nth, STRPTR * label);
                   /* SIT_TAB */
 DLLIMP SIT_Widget SIT_TabGetNth(SIT_Widget, int nth);
-DLLIMP void       SIT_TabSplice(SIT_Widget, int pos, int del, ...) SENTINEL;
+DLLIMP void       SIT_TabSplice(SIT_Widget, int pos, int del, ...) SIT_SENTINEL;
                   /* SIT_LISTBOX */
 DLLIMP int        SIT_ListInsertItem(SIT_Widget, int row, APTR rowTag, ...);
 DLLIMP void       SIT_ListDeleteRow(SIT_Widget, int row);
@@ -129,13 +129,12 @@ DLLIMP void       SIT_ListFinishInsertControl(SIT_Widget);
 DLLIMP STRPTR     SIT_ListGetCellText(SIT_Widget, int col, int row);
 DLLIMP int        SIT_ListFindByTag(SIT_Widget w, APTR tag);
 DLLIMP int        SIT_ListGetItemOver(SIT_Widget, float rect[4], float mouseX, float mouseY, SIT_Widget * mouseIsRelTo);
-DLLIMP SIT_Widget SIT_ListGetItemRect(SIT_Widget, float rect[4], int row, int col);
 DLLIMP void       SIT_ListReorgColumns(SIT_Widget, STRPTR);
 DLLIMP Bool       SIT_ListSetCell(SIT_Widget, int row, int col, APTR rowTag, int align, STRPTR text);
 DLLIMP Bool       SIT_ListSetColumn(SIT_Widget, int col, int width, int align, STRPTR label);
 DLLIMP void       SIT_ListSetRowVisibility(SIT_Widget w, int row, Bool visible);
                   /* SIT_EDITBOX */
-DLLIMP int        SIT_TextEditLineLength(SIT_Widget, int line, int * lineStart);
+DLLIMP int        SIT_TextEditLineLength(SIT_Widget, int line, int * lineStart, Bool fromFile);
 DLLIMP int        SIT_TextGetWithSoftline(SIT_Widget, STRPTR buffer, int max);
                   /* clipboard */
 DLLIMP STRPTR     SIT_GetFromClipboard(int * size);
@@ -371,7 +370,6 @@ enum
 #define	SIT_RowTag(row)          SIT_TargetRow, row, SIT_RowTagArg
 #define	SIT_CellTag(row, cell)   SIT_TargetRow, (row) | ((cell) << 24), SIT_RowTagArg
 #define	SIT_RowSel(row)          SIT_TargetRow, row, SIT_RowSelArg
-#define SIT_ListItem(row, col)   ((col) | ((row) << 8)), 0xbaadf00d
 
 #define SITV_LabelSize(w,h)      (int) ((w) | ((h) << 16))
 
@@ -444,13 +442,16 @@ enum         /* SIT_ListBoxFlags */
 /* special value for rowTag parameter of SIT_ListInsertItem() */
 #define SITV_CategoryRow         ((APTR)-1)
 
-enum         /* SIT_ViewMode */
+#define SIT_ListGetItemRect(listbox, rect_out, row, col, parent_inout) \
+	SIT_ListGetItemOver(listbox, rect_out, ((col) | ((row) << 8)), 0xbaadf00d, parent_inout)
+
+enum // SIT_ViewMode
 {
 	SITV_ListViewReport,         /* default value */
 	SITV_ListViewIcon,
 };
 
-enum         /* SIT_DialogStyles */
+enum // SIT_DialogStyles
 {
 	SITV_Resizable   = 0x01,
 	SITV_Transcient  = 0x02,
@@ -459,7 +460,7 @@ enum         /* SIT_DialogStyles */
 	SITV_Plain       = 0x10,
 };
 
-enum         /* SIT_DlgFlags */
+enum // SIT_DlgFlags
 {
 	SITV_FileSave          = 0x01,
 	SITV_FileMultiSelect   = 0x02,
@@ -468,13 +469,13 @@ enum         /* SIT_DlgFlags */
 	SITV_FileWarnOverwrite = 0x10
 };
 
-enum         /* SIT_TabStyle (SIT_TAB) */
+enum // SIT_TabStyle (SIT_TAB)
 {
 	SITV_TabSingleLine,
 	SITV_TabInvisible
 };
 
-enum         /* SIT_TabStyle (SIT_EDITBOX) */
+enum // SIT_TabStyle (SIT_EDITBOX)
 {
 	SITV_TabEditNormal,          /* default: include tab in multi-line text */
 	SITV_TabEditToSpace,         /* convert tab to space */
@@ -484,7 +485,7 @@ enum         /* SIT_TabStyle (SIT_EDITBOX) */
 /* use this flag for SIT_TabStyle to use a bitfield instead of a tab number as first parameter for SIT_TabNum() */
 #define SITV_TabVisiblityBitField      0x10
 
-enum         /* SIT_ArrowType */
+enum // SIT_ArrowType
 {
 	SITV_NoArrows,               /* default style */
 	SITV_ArrowsTopBottom,        /* will be left/right if hscroll */
@@ -492,7 +493,7 @@ enum         /* SIT_ArrowType */
 	SITV_ArrowsBottom            /* or right */
 };
 
-enum         /* SIT_ToolTipAnchor */
+enum // SIT_ToolTipAnchor
 {
 	SITV_TooltipNearParent,      /* default style */
 	SITV_TooltipFollowMouse,
@@ -502,14 +503,14 @@ enum         /* SIT_ToolTipAnchor */
 /* special value for SIT_DisplayTime and SIT_DelayTime */
 #define SITV_TooltipManualTrigger       100000000
 
-enum         /* SIT_WordWrap */
+enum // SIT_WordWrap
 {
 	SITV_WWNone,
 	SITV_WWChar,
 	SITV_WWWord
 };
 
-enum         /* SIT_CaretStyle */
+enum // SIT_CaretStyle
 {
 	SITV_CaretIBeam,
 	SITV_CaretBlock,
@@ -518,7 +519,7 @@ enum         /* SIT_CaretStyle */
 	SITV_CaretNotify = 0x80,     /* can be ored: get notification of cursor pos change, see doc on how to use it */
 };
 
-enum         /* SIT_MoveNearby() defAlign parameter bitfield */
+enum // SIT_MoveNearby() defAlign parameter bitfield
 {
 	SITV_AlignTop     = 1,
 	SITV_AlignBottom  = 2,
@@ -531,49 +532,50 @@ enum         /* SIT_MoveNearby() defAlign parameter bitfield */
 /* special value for SIT_DisplayTime */
 #define SITV_ResetTime           2000000000
 
-enum /* event type (SIT_AddCallback) */
-{	                     // Call data
-	SITE_OnClose,        // Bool *
-	SITE_OnActivate,     // NULL
-	SITE_OnChange,       // STRPTR (SIT_EDITBOX) or int (everything else)
-	SITE_OnFocus,        // 1
-	SITE_OnBlur,         // 0
-	SITE_OnFinalize,     // NULL
-	SITE_OnClick,        // SIT_OnMouse *
-	SITE_OnMouseMove,    // SIT_OnMouse *
-	SITE_OnResize,       // float [2]
-	SITE_OnPaint,        // SIT_OnPaint *
-	SITE_OnRawKey,       // SIT_OnKey *
-	SITE_OnVanillaKey,   // SIT_OnKey *
-	SITE_OnSortColumn,   // int
-	SITE_OnSortItem,     // SIT_OnSort *
-	SITE_OnSetOrGet,     // SIT_OnVal *
-	SITE_OnGeometrySet,  // int [3]
-	SITE_OnDropFiles,    // STRPTR * (array is null-terminated)
-	SITE_OnMouseOut,     // SIT_Widget
+enum // event type (SIT_AddCallback)
+{	                             // Call data
+	SITE_OnClose,                // Bool *
+	SITE_OnActivate,             // NULL
+	SITE_OnChange,               // STRPTR (SIT_EDITBOX) or int (everything else)
+	SITE_OnFocus,                // 1
+	SITE_OnBlur,                 // 0
+	SITE_OnFinalize,             // NULL
+	SITE_OnClick,                // SIT_OnMouse *
+	SITE_OnMouseMove,            // SIT_OnMouse *
+	SITE_OnResize,               // float [2]
+	SITE_OnPaint,                // SIT_OnPaint *
+	SITE_OnRawKey,               // SIT_OnKey *
+	SITE_OnVanillaKey,           // SIT_OnKey *
+	SITE_OnSortColumn,           // int
+	SITE_OnSortItem,             // SIT_OnSort *
+	SITE_OnSetOrGet,             // SIT_OnVal *
+	SITE_OnGeometrySet,          // int [3]
+	SITE_OnDropFiles,            // STRPTR * (array is null-terminated)
+	SITE_OnMouseOut,             // SIT_Widget
 	SITE_LastEvent,
-	SITE_OnClickMove     // SIT_OnMouse *  (register cb both for OnClick and OnMouseMove) */
+	SITE_OnClickMove,            // SIT_OnMouse *  (register cb both for OnClick and OnMouseMove) */
+	SITE_OnPaintPad,             // SIT_OnPaint *  (area reported will be content box instead of padding box) */
 };
 
-struct SIT_OnChange_t
+struct SIT_OnChange_t            /* SITE_OnChange event on root widget */
 {
 	enum
 	{
-		SIT_CHANGE_CURSOR
+		SIT_CHANGE_CURSOR        /* cursor hovering a different part of interface */
 	}   type;
 	int arg;
 };
 
-struct SIT_OnKey_t
+struct SIT_OnKey_t               /* SITE_OnRawKey or SITE_OnVanillaKey */
 {
-	int     keycode;     /* unicode code point [1 - 0x10FFFF] */
-	int     flags;       /* SITK_Flag* */
+	int     keycode;             /* unicode code point [1 - 0x10FFFF] */
+	int     flags;               /* SITK_Flag* */
 	uint8_t utf8[6];
 };
 
-struct SIT_OnMouse_t     /* note: sizeof (struct SIT_OnMouse_t) must be 8 */
+struct SIT_OnMouse_t             /* note: sizeof (struct SIT_OnMouse_t) must be 8 */
 {
-	enum                 /* to get debug symbols, while limiting the size of this field to 8bit */
+	enum                         /* to get debug symbols, while limiting the size of this field to 8bit */
 	{
 		SITOM_ButtonLeft,
 		SITOM_ButtonMiddle,
@@ -588,29 +590,42 @@ struct SIT_OnMouse_t     /* note: sizeof (struct SIT_OnMouse_t) must be 8 */
 		SITOM_Move,
 		SITOM_CaptureMove
 	}	state:8;
-	unsigned flags:16;   /* SITK_Flag* : qualifier keys held before mouse event */
-	int16_t  x, y;       /* relative to top left corner of control (padding box) */
+	unsigned flags:16;           /* SITK_Flag* : qualifier keys held before mouse event */
+	int16_t  x, y;               /* relative to top left corner of control (padding box) */
 };
 
-struct SIT_OnSort_t
+struct SIT_OnSort_t              /* SITE_OnSortItem */
 {
-	APTR item1;          /* rowTag parameter of SIT_ListInsertItem() */
+	APTR item1;                  /* rowTag parameter of SIT_ListInsertItem() */
 	APTR item2;
-	int  column;         /* 0 based */
+	int  column;                 /* 0 based */
 };
 
-struct SIT_OnEditBox_t   /* custom lexer for SIT_EDITBOX */
+struct SIT_OnEditBox_t           /* custom lexer for SIT_EDITBOX */
 {
-	DATA8 lexerCMap;     /* callback must fill <length> bytes into this ... */
-	DATA8 textBuffer;    /* ... according to the content of this buffer */
-	DATA8 cmap;          /* colormap from user */
-	int   length;        /* size in bytes of both buffers */
-	int   line;          /* 0-based line number being rendered */
-	int   byte;          /* byte offset within SIT_Title */
-	int   totalRow;      /* total rows of text */
+	DATA8 lexerCMap;             /* callback must fill <length> bytes into this ... */
+	DATA8 textBuffer;            /* ... according to the content of this buffer */
+	DATA8 cmap;                  /* colormap from user */
+	int   length;                /* size in bytes of both buffers */
+	int   line;                  /* 0-based line number being rendered */
+	int   byte;                  /* byte offset within SIT_Title */
+	int   totalRow;              /* total rows of text */
 };
 
-struct SIT_TextShadow_t
+struct SIT_OnEditChange_t        /* SITE_OnChange event for EDITBOX (if SITV_CaretNotify has been activated) */
+{
+	int caretColScr;             /* caret position as seen on screen */
+	int caretRowScr;
+	int caretColFile;            /* take word wrapping into account (ie: as is in the file) */
+	int caretRowFile;
+	int totalLines;              /* ie: number of '\n' in the file */
+	int screenLines;             /* add word wrapped lines in the total */
+	int caretOffset;             /* byte offset from beginning of file */
+	int totalBytes;              /* note: this is really bytes, not UTF-8 characters */
+	int undoSavePoint;           /* to know if file has been modified */
+};
+
+struct SIT_TextShadow_t          /* part of SITE_OnPaint */
 {
 	float   dx, dy, blur;
 	uint8_t color[4];
@@ -620,24 +635,24 @@ typedef struct SIT_TextShadow_t *    SITTSH;
 
 struct SIT_OnPaint_t
 {
-	float  x, y;         /* recommended area to refresh (padding box) */
+	float  x, y;                 /* recommended area to refresh (padding box) */
 	float  w, h;
 	float  fontSize;
 	int    fontId;
-	APTR   nvg;          /* nanovg context */
+	APTR   nvg;                  /* nanovg context */
 	int    shadowCount;
 	SITTSH shadow;
 };
 
-struct SIT_OnCellPaint_t
+struct SIT_OnCellPaint_t         /* call_data parameter for SIT_CellPaint callback */
 {
 	uint8_t fgColor[4];
 	uint8_t bgColor[4];
-	int     rowColumn;   /* 0 based */
-	float   LTWH[4];
+	int     rowColumn;           /* 0 based: first 8bits = col, remaining = row */
+	float   LTWH[4];             /* area of the cell */
 };
 
-struct SIT_OnVal_t
+struct SIT_OnVal_t               /* SITE_OnSetOrGet */
 {
 	enum
 	{
@@ -646,11 +661,11 @@ struct SIT_OnVal_t
 		SITV_PostProcess
 	}         stage;
 	int       tag;
-	APTR      ptr;       /* access those 2 fields using SIT_GET or SIT_SET */
+	APTR      ptr;               /* access those 2 fields using SIT_GET or SIT_SET */
 	va_list * vararg;
 };
 
-struct SIT_Accel_t
+struct SIT_Accel_t               /* SIT_AccelTable argument */
 {
 	int          key;
 	uint16_t     event;
@@ -659,25 +674,25 @@ struct SIT_Accel_t
 	SIT_CallProc cb;
 };
 
-#define SIT_GET(cd, t)       ((cd)->vararg ? va_arg(*(cd)->vararg, t) : * (t *) (cd)->ptr)
-#define	SIT_SET(cd, val, t)  (* (t *)(((SIT_OnVal *)(cd))->ptr) = val)
+#define SIT_GET(cd, t)           ((cd)->vararg ? va_arg(*(cd)->vararg, t) : * (t *) (cd)->ptr)
+#define	SIT_SET(cd, val, t)      (* (t *)(((SIT_OnVal *)(cd))->ptr) = val)
 
-enum /* possible return codes from SITE_OnSortItem callback */
+enum // possible return codes from SITE_OnSortItem callback
 {
 	SIT_SortBefore   = -1,
 	SIT_SortEqual    =  0,
 	SIT_SortAfter    =  1,
-	SIT_SortAlpha    =  2,    /* sort will be done by the library (default if no cb) */
-	SIT_SortBinary   =  3,    /* like strcmp() */
-	SIT_SortNumeric  =  4,    /* decimal integer sort */
-	SIT_SortAlphaNum =  5     /* mix between alpha and numeric */
+	SIT_SortAlpha    =  2,       /* sort will be done by the library (default if no cb) */
+	SIT_SortBinary   =  3,       /* like strcmp() */
+	SIT_SortNumeric  =  4,       /* decimal integer sort */
+	SIT_SortAlphaNum =  5        /* mix between alpha and numeric */
 };
 
-#define	SITV_Em(em)        (((int)(em*8192) & 0x7fffffff) | (1<<31))
-#define	SITV_Px(px)        ((px) & ~(1<<31)) /* needed for negative number */
-#define SITV_NoPad         262144
+#define	SITV_Em(em)              (((int)(em*8192) & 0x7fffffff) | (1<<31))
+#define	SITV_Px(px)              ((px) & ~(1<<31)) /* needed for negative number */
+#define SITV_NoPad               262144
 
-typedef struct KeyVal_t /* SIT_TagList value */
+typedef struct KeyVal_t          /* SIT_TagList value */
 {
 	int tag;
 	union {
@@ -687,7 +702,7 @@ typedef struct KeyVal_t /* SIT_TagList value */
 	} key;
 } KeyVal_t;
 
-enum /* values for SIT_OnKey_t.flags */
+enum // values for SIT_OnKey_t.flags
 {
 	SITK_FlagShift   = 0x0100,
 	SITK_FlagCtrl    = 0x0200,
@@ -698,61 +713,63 @@ enum /* values for SIT_OnKey_t.flags */
 	SITK_Flags       = 0xff00
 };
 
-#define RAWKEY(x)      ((x) << 16)
+#define SIT_RAWKEY(x)      ((x) << 16)
 
-enum /* special values for SIT_OnKey_t.keycode field */
+enum // special values for SIT_OnKey_t.keycode field
 {
-	SITK_Home        = RAWKEY(1),
-	SITK_End         = RAWKEY(2),
-	SITK_PrevPage    = RAWKEY(3),
-	SITK_NextPage    = RAWKEY(4),
-	SITK_Up          = RAWKEY(5),
-	SITK_Down        = RAWKEY(6),
-	SITK_Left        = RAWKEY(7),
-	SITK_Right       = RAWKEY(8),
-	SITK_LShift      = RAWKEY(9),
-	SITK_RShift      = RAWKEY(10),
-	SITK_LAlt        = RAWKEY(11),
-	SITK_RAlt        = RAWKEY(12),
-	SITK_LCtrl       = RAWKEY(13),
-	SITK_RCtrl       = RAWKEY(14),
-	SITK_LCommand    = RAWKEY(15),
-	SITK_RCommand    = RAWKEY(16),
-	SITK_AppCommand  = RAWKEY(17),
-	SITK_Return      = RAWKEY(18),
-	SITK_Caps        = RAWKEY(19),
-	SITK_Insert      = RAWKEY(20),
-	SITK_Delete      = RAWKEY(21),
-	SITK_ScrollLock  = RAWKEY(22),
-	SITK_NumLock     = RAWKEY(23),
-	SITK_Impr        = RAWKEY(24),
-	SITK_F1          = RAWKEY(25),
-	SITK_F2          = RAWKEY(26),
-	SITK_F3          = RAWKEY(27),
-	SITK_F4          = RAWKEY(28),
-	SITK_F5          = RAWKEY(29),
-	SITK_F6          = RAWKEY(30),
-	SITK_F7          = RAWKEY(31),
-	SITK_F8          = RAWKEY(32),
-	SITK_F9          = RAWKEY(33),
-	SITK_F10         = RAWKEY(34),
-	SITK_F11         = RAWKEY(35),
-	SITK_F12         = RAWKEY(36),
-	SITK_F13         = RAWKEY(37),
-	SITK_F14         = RAWKEY(38),
-	SITK_F15         = RAWKEY(39),
-	SITK_F16         = RAWKEY(40),
-	SITK_F17         = RAWKEY(41),
-	SITK_F18         = RAWKEY(42),
-	SITK_F19         = RAWKEY(43),
-	SITK_F20         = RAWKEY(44),
-	SITK_Tab         = RAWKEY(45),
-	SITK_BackSpace   = RAWKEY(46),
-	SITK_Escape      = RAWKEY(47),
-	SITK_Space       = RAWKEY(48),
-	SITK_Help        = RAWKEY(49),
-	SITK_Shift       = RAWKEY(50)
+	SITK_Home        = SIT_RAWKEY(1),
+	SITK_End         = SIT_RAWKEY(2),
+	SITK_PrevPage    = SIT_RAWKEY(3),
+	SITK_NextPage    = SIT_RAWKEY(4),
+	SITK_Up          = SIT_RAWKEY(5),
+	SITK_Down        = SIT_RAWKEY(6),
+	SITK_Left        = SIT_RAWKEY(7),
+	SITK_Right       = SIT_RAWKEY(8),
+	SITK_LShift      = SIT_RAWKEY(9),
+	SITK_RShift      = SIT_RAWKEY(10),
+	SITK_LAlt        = SIT_RAWKEY(11),
+	SITK_RAlt        = SIT_RAWKEY(12),
+	SITK_LCtrl       = SIT_RAWKEY(13),
+	SITK_RCtrl       = SIT_RAWKEY(14),
+	SITK_LCommand    = SIT_RAWKEY(15),
+	SITK_RCommand    = SIT_RAWKEY(16),
+	SITK_AppCommand  = SIT_RAWKEY(17),
+	SITK_Return      = SIT_RAWKEY(18),
+	SITK_Caps        = SIT_RAWKEY(19),
+	SITK_Insert      = SIT_RAWKEY(20),
+	SITK_Delete      = SIT_RAWKEY(21),
+	SITK_ScrollLock  = SIT_RAWKEY(22),
+	SITK_NumLock     = SIT_RAWKEY(23),
+	SITK_Impr        = SIT_RAWKEY(24),
+	SITK_F1          = SIT_RAWKEY(25),
+	SITK_F2          = SIT_RAWKEY(26),
+	SITK_F3          = SIT_RAWKEY(27),
+	SITK_F4          = SIT_RAWKEY(28),
+	SITK_F5          = SIT_RAWKEY(29),
+	SITK_F6          = SIT_RAWKEY(30),
+	SITK_F7          = SIT_RAWKEY(31),
+	SITK_F8          = SIT_RAWKEY(32),
+	SITK_F9          = SIT_RAWKEY(33),
+	SITK_F10         = SIT_RAWKEY(34),
+	SITK_F11         = SIT_RAWKEY(35),
+	SITK_F12         = SIT_RAWKEY(36),
+	SITK_F13         = SIT_RAWKEY(37),
+	SITK_F14         = SIT_RAWKEY(38),
+	SITK_F15         = SIT_RAWKEY(39),
+	SITK_F16         = SIT_RAWKEY(40),
+	SITK_F17         = SIT_RAWKEY(41),
+	SITK_F18         = SIT_RAWKEY(42),
+	SITK_F19         = SIT_RAWKEY(43),
+	SITK_F20         = SIT_RAWKEY(44),
+	SITK_Tab         = SIT_RAWKEY(45),
+	SITK_BackSpace   = SIT_RAWKEY(46),
+	SITK_Escape      = SIT_RAWKEY(47),
+	SITK_Space       = SIT_RAWKEY(48),
+	SITK_Help        = SIT_RAWKEY(49),
+	SITK_Shift       = SIT_RAWKEY(50)
 };
+
+#undef SIT_RAWKEY
 
 /* special tag modifier to enable printf-like parsing for string parameter */
 #define	XfMt            0x10000

@@ -17,7 +17,6 @@
 
 #define RIGHT               1
 #define LEFT                2
-// #define	DEBUG_STACK
 
 typedef struct Operator_t *     Operator;
 typedef struct Stack_t *        Stack;
@@ -56,13 +55,12 @@ static struct Operator_t OperatorList[] =
 	{ "-=",  2, RIGHT,  2 }, { "<<=", 2, RIGHT,  2 }, // 30
 	{ ">>=", 2, RIGHT,  2 }, { "&=",  2, RIGHT,  2 }, // 32
 	{ "^=",  2, RIGHT,  2 }, { "|=",  2, RIGHT,  2 }, // 34
-	{ ",",   2, RIGHT,  1 },                          // 36
+	{ ",",   2, RIGHT,  1 }, { "[",   0, LEFT,  18 }, // 36
+	{ "]",   1, LEFT,  18 },                          // 38
 };
 
 /* special operators */
 static struct Operator_t functionCall = { "(",   0, LEFT,  17 };
-static struct Operator_t arrayStart   = { "[",   0, LEFT,  18 };
-static struct Operator_t arrayEnd     = { "]",   1, LEFT,  18 };
 
 /* special operators */
 #define binaryMinus     (OperatorList+9)
@@ -71,6 +69,8 @@ static struct Operator_t arrayEnd     = { "]",   1, LEFT,  18 };
 #define logicalOr       (OperatorList+22)
 #define ternaryLeft     (OperatorList+23)
 #define ternaryRight    (OperatorList+24)
+#define arrayStart      (OperatorList+37)
+#define arrayEnd        (OperatorList+38)
 
 struct Unit_t units[] =
 {
@@ -115,11 +115,7 @@ enum
 	TOKEN_END
 };
 
-#ifdef	CRASH_TEST
-#define	SZ_POOL      300
-#else
 #define	SZ_POOL      1024
-#endif
 
 void ByteCodeGenExpr(STRPTR unused, Variant argv, int arity, APTR data);
 void ByteCodeAddVariant(ByteCode, Variant);
@@ -161,8 +157,8 @@ static void * MyCalloc(DATA8 buffer, int length)
 				memset(buffer = p + 4, 0, length);
 				p   += length + 4;
 				len -= length + 4;
-				p[0] = length >> 8;
-				p[1] = length & 0xff;
+				p[0] = len >> 8;
+				p[1] = len & 0xff;
 				p[2] = p[3] = 0;
 				return buffer;
 			}
@@ -193,6 +189,31 @@ static void MyFree(DATA8 buffer, Stack stack)
 	}
 	else free(mem);
 }
+
+#if 0
+static void DebugMem(DATA8 mem)
+{
+	DATA8 p = mem;
+	while (1)
+	{
+		int len = (p[0] << 8) | p[1];
+
+		switch (p[2]) {
+		case 2: /* block freed */
+			fprintf(stderr, "free: %d bytes\n", len);
+			p += len + 4;
+			break;
+		case 1: /* block not free */
+			fprintf(stderr, "used: %d bytes\n", len);
+			p += len + 4;
+			break;
+		case 0: /* block free up to the end */
+			fprintf(stderr, "last: %d bytes free\n", len);
+			return;
+		}
+	}
+}
+#endif
 
 static Stack NewOperator(DATA8 buffer, Operator ope)
 {
@@ -437,7 +458,8 @@ static int GetToken(DATA8 buffer, Stack * object, DATA8 * exp)
 	/* skip starting space */
 	for (str = *exp; isspace(*str); str ++);
 
-	type = chrClass[str[0]];
+	/* assume char >= 128 to be part of a UTF-8 sequence */
+	type = str[0] < 128 ? chrClass[str[0]] : TOKEN_IDENT;
 
 	switch (type) {
 	case TOKEN_STRING:
@@ -607,28 +629,6 @@ int CompareString(Stack arg1, Stack arg2)
 }
 
 
-#ifdef	DEBUG_STACK
-void DebugStacks(Stack values, Stack oper)
-{
-	Stack s;
-
-	printf("Values: ");
-	for (s = values; s; s = s->next) {
-		switch (s->type) {
-		case TYPE_INT: printf("%ld ", s->value.integer); break;
-		case TYPE_DBL: printf("%g ", s->value.real); break;
-		case TYPE_STR:
-		case TYPE_IDF: printf("%s ", s->value.string);
-		}
-	}
-
-	printf("\nOper:   ");
-	for (s = oper; s; s = s->next)
-		printf("%s:%d ", s->value.ope->token, s->type);
-	printf("\n================================================\n");
-}
-#endif
-
 static int MakeCall(DATA8 buffer, Stack * values, ParseExpCb cb, APTR data, Bool eval)
 {
 	Stack val;
@@ -639,6 +639,11 @@ static int MakeCall(DATA8 buffer, Stack * values, ParseExpCb cb, APTR data, Bool
 	if (val)
 	{
 		Variant list = alloca(MAX(nb, 1) * sizeof *val);
+		if (nb == 0)
+		{
+			/* no arg provided for this function, but alloc one slot for result */
+			memset(list, 0, sizeof *list);
+		}
 		/* convert all arguments to scalars */
 		for (val = *values, i = nb-1; val && val->value.type != TYPE_FUN; val = val->next, i --)
 		{
@@ -691,10 +696,6 @@ static int MakeOp(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb, APT
 	int      nb, error = 0;
 
 	#define	THROW(err)	{ error = err; goto error_case; }
-
-	#ifdef	DEBUG_STACK
-	DebugStacks(*values, *oper);
-	#endif
 
 	/* do we need to evalutate something ? */
 	for (arg1 = (*oper)->next, eval = True; eval && arg1; eval = arg1->value.eval, arg1 = arg1->next);
@@ -1062,7 +1063,7 @@ static int MakeOpArray(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb
 	if (ope == NULL)
 		return PERR_InvalidOperation;
 
-	if (ope->value.ope == &arrayStart)
+	if (ope->value.ope == arrayStart)
 	{
 		/* constructor */
 		int   count = VAR_LENGTH(&ope->value);
@@ -1088,7 +1089,7 @@ static int MakeOpArray(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb
 		/* shouldn't happen: the code is buggy if it gets here */
 		return PERR_MissingOperand;
 	}
-	else if (ope->value.ope == &arrayEnd) /* dereference */
+	else if (ope->value.ope == arrayEnd) /* dereference */
 	{
 		*oper = ope->next;
 		MyFree(buffer, ope);
@@ -1114,30 +1115,38 @@ static int MakeOpArray(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb
 		}
 		MyFree(buffer, value);
 		value = PopStack(values);
-		Bool ext = False;
+		if (cb == ByteCodeGenExpr && value->value.type == TYPE_IDF)
+		{
+			/* need to generate byte code for this, not do the dereference operation (unless the expression is constant) */
+			VariantBuf argv[3];
+			argv[0].type = TYPE_OPE;
+			argv[0].ope  = arrayEnd;
+			argv[1] = value->value;
+			argv[2].type = TYPE_INT32;
+			argv[2].int32 = index;
+			ByteCodeGenExpr(NULL, argv, 2, data);
+
+			/* push a dummy value */
+			MyFree(buffer, value);
+			value = NewNumber(buffer, TYPE_INT32, 0);
+			value->value.type = TYPE_OPE;
+			PushStack(values, value);
+			return 0;
+		}
 		if (value->value.type == TYPE_IDF)
-			AffectArg(value, cb, data), ext = True;
+			AffectArg(value, cb, data);
 
 		if (value->value.type == TYPE_ARRAY)
 		{
 			int count = VAR_LENGTH(&value->value);
-			/* bounds checking, unlike C */
+			/* bound checking, unlike C */
 			if (0 <= index && index < count)
 			{
 				Variant item = value->value.array[index];
-				if (ext)
-				{
-					/* need to duplicate object */
-					value = MyCalloc(buffer, sizeof *value);
-					value->value = *item;
-					PushStack(values, value);
-				}
-				else
-				{
-					value->value.array[index] = NULL;
-					MyFree(buffer, value);
-					PushStack(values, (Stack) ((DATA8) item - offsetp(Stack, value)));
-				}
+				Stack arrayItem = MyCalloc(buffer, sizeof *value);
+				arrayItem->value = *item;
+				PushStack(values, arrayItem);
+				MyFree(buffer, value);
 				return 0;
 			}
 			else return PERR_IndexOutOfRange;
@@ -1152,17 +1161,17 @@ static int MakeOpArray(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb
 				DATA8 p;
 				for (p = value->value.string; *p && index > 0; p = NEXTCHAR(p), index --);
 				if (*p == 0) return PERR_IndexOutOfRange;
-				value = MyCalloc(buffer, sizeof *value + utf8Next[*p >> 4] + 1);
-				value->value.type = TYPE_STR;
-				value->value.lengthFree = 1;
-				value->value.string = (STRPTR) (value + 1);
-				CopyString(value->value.string, p, utf8Next[*p >> 4] + 1);
-				PushStack(values, value);
+				Stack chr = MyCalloc(buffer, sizeof *chr + utf8Next[*p >> 4] + 1);
+				chr->value.type = TYPE_STR;
+				chr->value.lengthFree = 1;
+				chr->value.string = (STRPTR) (chr + 1);
+				CopyString(chr->value.string, p, utf8Next[*p >> 4] + 1);
+				MyFree(buffer, value);
+				PushStack(values, chr);
 				#undef NEXTCHAR
 				return 0;
 			}
-			else
-				return PERR_IndexOutOfRange;
+			else return PERR_IndexOutOfRange;
 		}
 	}
 	return PERR_InvalidOperation;
@@ -1190,15 +1199,17 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 	{
 		switch (GetToken(buffer, &object, &next)) {
 		case TOKEN_SCALAR: /* number => stack it */
-			if (tok == TOKEN_SCALAR) THROW(PERR_SyntaxError);
 			if (object->value.type == TYPE_IDF && cb == ByteCodeGenExpr)
 			{
 				DATA8 kwd = object->value.string;
 				if (IsKeyword(&kwd) > 0)
+					/* consider this the end of the expression */
 					goto error_case;
 			}
+			if (tok == TOKEN_SCALAR) THROW(PERR_SyntaxError);
 			tok = TOKEN_SCALAR;
 			PushStack(&values, object);
+			object = NULL;
 			break;
 		case TOKEN_DECPRI:
 			if (tok == TOKEN_OPERATOR && oper->value.ope != &functionCall)
@@ -1210,15 +1221,15 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 		case TOKEN_ARRAYSTART:
 			if (values && (values->value.type == TYPE_IDF || values->value.type == TYPE_ARRAY || values->value.type == TYPE_STR))
 				/* dereference */
-				ope = &arrayEnd;
+				ope = arrayEnd;
 			else
 				/* create array */
-				ope = &arrayStart;
+				ope = arrayStart;
 			object = NewOperator(buffer, ope);
 			goto case_OPE;
 		case TOKEN_ARRAYEND:
 			/* build an array or dereference */
-			while (error == 0 && oper && oper->value.ope != &arrayEnd && oper->value.ope != &arrayStart)
+			while (error == 0 && oper && oper->value.ope != arrayEnd && oper->value.ope != arrayStart)
 				error = MakeOp(buffer, &values, &oper, cb, data);
 
 			curpri -= 30;
@@ -1255,7 +1266,7 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 			while (error == 0 && oper && pri < oper->value.type)
 				error = MakeOp(buffer, &values, &oper, cb, data);
 
-			if (error) { MyFree(buffer, object); break; }
+			if (error) { MyFree(buffer, object); object = NULL; break; }
 
 			tok = TOKEN_OPERATOR;
 			object->value.type = curpri + ope->priority;
@@ -1267,6 +1278,7 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 				else
 					oper->value.eval = ! oper->value.eval;
 				MyFree(buffer, object);
+				object = NULL;
 				break;
 			}
 			else if (ope == ternaryLeft || ope == logicalAnd) /* <b> clause of a?b:c or <b> clause of a&&b */
@@ -1279,7 +1291,7 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 				if (values->value.type == TYPE_IDF) AffectArg(values, cb, data);
 				object->value.eval = IsNull(&values->value);
 			}
-			else if (ope == &arrayEnd || ope == &arrayStart || ope == &functionCall)
+			else if (ope == arrayEnd || ope == arrayStart || ope == &functionCall)
 			{
 				curpri += 30;
 			}
@@ -1287,7 +1299,7 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 			if (ope == commaSeparator)
 			{
 				#if 1
-				if (oper->value.ope == &arrayStart)
+				if (oper->value.ope == arrayStart)
 					/* building an array: keep track of number of items */
 					oper->value.lengthFree ++;
 				#endif
@@ -1296,6 +1308,7 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 				MyFree(buffer, object);
 			}
 			else PushStack(&oper, object);
+			object = NULL;
 		case TOKEN_END:
 			break;
 		default:
@@ -1303,6 +1316,9 @@ int ParseExpression(DATA8 exp, ParseExpCb cb, APTR data)
 		}
 	}
 	error_case:
+	if (object)
+		/* not stacked yet */
+		MyFree(buffer, object);
 	if (cb == ByteCodeGenExpr)
 	{
 		/* error recovery similar to javascript */
@@ -1454,7 +1470,10 @@ Bool ByteCodeExe(DATA8 start, DATA8 * end, Bool isTrue, ParseExpCb cb, APTR data
 		switch (start[0]) {
 		case TYPE_OPE:
 			val = NewOperator(buffer, OperatorList + start[1]);
-			MakeOp(buffer, &values, &val, cb, data);
+			if (val->value.ope == arrayEnd || val->value.ope == arrayStart)
+				MakeOpArray(buffer, &values, &val, cb, data);
+			else
+				MakeOp(buffer, &values, &val, cb, data);
 			break;
 		case TYPE_FUN:
 			{

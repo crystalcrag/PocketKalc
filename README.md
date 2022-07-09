@@ -3,8 +3,9 @@
 As of june 2022, searching for the term "Calculator" on the front page of github.com **returns about 525,000 results**.
 99% of those are just barely functional stub, probably from CS students writing what appears to be their
 first assignment. 0.99% are an attempt to mimic the good old pocket calculator from the 1970s, with
-at best 4 or 5 operators available for you to use. The remaining 0.01% are fully stacked programming
-languages with a very rich mathematical library, that require months of training to be comfortable with.
+at best 4 or 5 operations available for you to use. The remaining 0.01% are usually extensive
+programming languages with very rich mathematical function libraries, that require months of
+training and university degree to be comfortable with.
 
 
 This program is an attempt to provide a solution that fits right in the middle, while remaining

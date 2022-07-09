@@ -120,7 +120,13 @@ void formatResult(Variant v, STRPTR varName, STRPTR out, int max)
 		if (varName)
 		{
 			mode = StrCat(out, max, 0, "   ");
-			StrCat(out, max, mode, varName);
+			mode = StrCat(out, max, mode, varName);
+			if (v->int32 > 31)
+			{
+				TEXT buffer[24];
+				sprintf(buffer, " on line %d", v->int32 >> 13);
+				StrCat(out, max, mode, buffer);
+			}
 		}
 		return;
 	}
@@ -485,6 +491,9 @@ int evalExpr(STRPTR expr, ParseExprData data)
 
 	data->res.type = TYPE_ERR;
 	if (data->cb)
-		data->cb(&data->res, errorMessages[error]);
+	{
+		data->res.int32 = error;
+		data->cb(&data->res, errorMessages[error & 31]);
+	}
 	return 0;
 }

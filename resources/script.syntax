@@ -5,13 +5,13 @@
 case insensitive
 match wordonly
 
-keyword if then else elseif end for to break continue goto
+keyword if then else elseif end while do break continue goto return
 
 directive print sin cos tan asin acos atan pow exp log sqrt floor ceil round
 directive exit
 
-constant \d+(\.\d*)?([eE][-+]?\d+)?f? 0[xX]\H+
-special pi E ln2 time now
+constant \d+(\.\d*)?([eE][-+]?\d+)? 0[xX]\H+
+special pi E ln2 time now argv
 
 match noseparator
 

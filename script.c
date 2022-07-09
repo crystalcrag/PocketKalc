@@ -25,6 +25,7 @@ struct
 	ProgOutput_t output;
 	Bool         curProgChanged, showError;
 	int          cancelEdit, autoIndentPos;
+	int          oldStat[9];
 
 }	script;
 
@@ -48,7 +49,8 @@ STRPTR errorMessages[] = {
 	"Not inside a loop",
 	"Missing END keyword",
 	"Missing semicolon",
-	"Output overflow"
+	"Output overflow",
+	"Stack overflow"
 };
 
 
@@ -120,6 +122,10 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 	TEXT  buffer[32];
 	int * stat = cd;
 
+	if (memcmp(script.oldStat, stat, sizeof script.oldStat) == 0)
+		return 0;
+	memcpy(script.oldStat, stat, sizeof script.oldStat);
+
 	SIT_GetValues(w, SIT_Title, &text, NULL);
 
 	if (script.showError && ! script.clearErr)
@@ -130,7 +136,7 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 	}
 
 	/* auto-indent */
-	if (stat[7] - 1 == script.autoIndentPos && stat[6] > 0 && text[stat[6]-1] == '\n' && text[stat[6]] == '\n')
+	if (stat[6] - 1 == script.autoIndentPos && stat[6] > 0 && text[stat[6]-1] == '\n' && (text[stat[6]] == '\n' || stat[6] == stat[7]))
 	{
 		/* added a newline */
 		DATA8 prev, end;
@@ -262,7 +268,7 @@ static int scriptRename(SIT_Widget w, APTR cd, APTR ud)
 	SIT_GetValues(w, SIT_SelectedIndex, &item, NULL);
 
 	parent = NULL;
-	if (SIT_ListGetItemOver(w, rect, SIT_ListItem(item,0), &parent) >= 0)
+	if (SIT_ListGetItemRect(w, rect, item, 0, &parent) >= 0)
 	{
 		ConfigChunk chunk;
 		SIT_GetValues(w, SIT_RowTag(item), &chunk, NULL);
@@ -391,7 +397,7 @@ static int scriptGotoLine(SIT_Widget w, APTR cd, APTR ud)
 	if (line)
 	{
 		int start;
-		int len = SIT_TextEditLineLength(script.progEdit, (int) line - 1, &start);
+		int len = SIT_TextEditLineLength(script.progEdit, (int) line - 1, &start, True);
 		SIT_SetValues(script.progEdit, SIT_StartSel, start+len, SIT_EndSel, start, NULL);
 		SIT_SetFocus(script.progEdit);
  	}
@@ -460,6 +466,28 @@ void scriptShow(SIT_Widget app)
 	SIT_SetFocus(script.progEdit);
 }
 
+void scriptShowProgram(SIT_Widget app, int progId, int line)
+{
+	if (script.progList == NULL)
+		scriptShow(app);
+
+	/* interface not yet loaded, need to wait */
+	ConfigChunk chunk;
+	int index;
+	for (chunk = HEAD(config->chunks), index = progId - 1; chunk && index > 0; NEXT(chunk))
+	{
+		if (chunk->name[0] == '$') index --;
+	}
+
+	if (chunk != script.curEdit)
+		SIT_SetValues(script.progList, SIT_SelectedIndex, progId-1, NULL);
+
+	int length = SIT_TextEditLineLength(script.progEdit, line - 1, &index, True);
+	if (length > 0) length --;
+	SIT_SetValues(script.progEdit, SIT_StartSel, index, SIT_EndSel, index + length, NULL);
+}
+
+
 static int scriptClearOk(SIT_Widget w, APTR cd, APTR ud)
 {
 	SIT_SetValues(w, SIT_Title, "Check", NULL);
@@ -480,7 +508,7 @@ static void scriptShowError(int errCode, int errLine)
 	if (script.clearErr)
 		SIT_ActionReschedule(script.clearErr, -1, -1), script.clearErr = NULL;
 	TEXT message[128];
-	sprintf(message, "%s (L:%d)", errorMessages[errCode], errLine);
+	sprintf(message, "%s (L:%d)", errorMessages[errCode & 31], errLine);
 	SIT_SetValues(script.progErr, SIT_Visible, True, SIT_Title, message, NULL);
 }
 
@@ -511,7 +539,7 @@ int scriptCheck(SIT_Widget button, APTR cd, APTR ud)
 		if (code.errCode > 0)
 		{
 			int start;
-			int len = SIT_TextEditLineLength(script.progEdit, code.errLine-1, &start);
+			int len = SIT_TextEditLineLength(script.progEdit, code.errLine-1, &start, True);
 			/* error found: highlight the line in the editor and display msg */
 			SIT_SetValues(script.progEdit, SIT_StartSel, start+len, SIT_EndSel, start, NULL);
 			SIT_SetFocus(script.progEdit);
@@ -843,7 +871,7 @@ void scriptToByteCode(ProgByteCode prog, DATA8 source)
 			}
 		}
 
-		if (token < 0)
+		if ((int) token < 0)
 		{
 			prog->errCode = - token;
 			return;
@@ -1101,42 +1129,64 @@ void scriptToByteCode(ProgByteCode prog, DATA8 source)
 }
 
 /* high-level function to transform program string into bytecode */
-ProgByteCode scriptGenByteCode(STRPTR prog)
+ProgByteCode scriptGenByteCode(STRPTR prog, Variant errCode)
 {
 	ConfigChunk chunk;
 	ProgByteCode list;
-	uint32_t crc = crc32(0, prog, -1);
+	uint32_t crc = 0;
+	int progId = 1;
+
+	/* get program source */
+	for (chunk = HEAD(config->chunks); chunk; NEXT(chunk))
+	{
+		if (chunk->name[0] == '$')
+		{
+			if (strcasecmp(chunk->name + 1, prog) == 0)
+				break;
+			progId ++;
+		}
+	}
+
+	if (chunk == NULL)
+		return NULL;
+
+	if (script.curEdit == chunk && script.curProgChanged)
+		scriptSaveChanges(chunk);
+
+	/* check if it is already compiled and up to date */
 	for (list = HEAD(script.programs); list; NEXT(list))
 	{
 		if (strcasecmp(list->name, prog) == 0)
 		{
+			crc = crc32(0, chunk->content, -1);
 			if (list->crc32 == crc)
 				return list;
-			else
-				break;
-		}
-	}
 
-	/* not yet compiled: do it now */
-	for (chunk = HEAD(config->chunks); chunk; NEXT(chunk))
-	{
-		if (chunk->name[0] == '$' && strcasecmp(chunk->name + 1, prog) == 0)
-		{
-			if (list == NULL)
-			{
-				list = calloc(sizeof *list, 1);
-				ListAddHead(&script.programs, &list->node);
-			}
-			CopyString(list->name, prog, sizeof list->name);
-			scriptToByteCode(list, chunk->content);
-			if (list->errCode == 0)
-				return list;
-
-			free(list->bc.code);
-			memset(&list->bc, 0, sizeof list->bc);
+			/* not up to date: regen script */
+			list->bc.size = 0;
 			break;
 		}
 	}
+
+	/* not yet compiled or not up to date: do it now */
+	if (list == NULL)
+	{
+		list = calloc(sizeof *list, 1);
+		ListAddHead(&script.programs, &list->node);
+		CopyString(list->name, prog, sizeof list->name);
+	}
+	list->crc32 = crc;
+
+	/* convert to bytecode */
+	scriptToByteCode(list, chunk->content);
+	if (list->errCode == 0)
+		return list;
+
+	errCode->type = TYPE_ERR;
+	errCode->int32 = list->errCode | (progId << 5) | (list->errLine << 13);
+
+	free(list->bc.code);
+	memset(&list->bc, 0, sizeof list->bc);
 	return NULL;
 }
 
@@ -1236,7 +1286,7 @@ void addOutputToList(STRPTR line);
 /* function to execute bytecode /!\ multi-thread context do not use SIGTL API here */
 Bool scriptExecute(STRPTR progName, int argc, Variant argv)
 {
-	ProgByteCode prog = scriptGenByteCode(progName);
+	ProgByteCode prog = scriptGenByteCode(progName, argv);
 
 	if (prog)
 	{
@@ -1294,7 +1344,7 @@ Bool scriptExecute(STRPTR progName, int argc, Variant argv)
 		symTableFree(&prog->symbols);
 		if (prog->errCode > 0)
 		{
-			/* bubble the error back to caller */
+			/* bubble the error back to the caller */
 			argv->type = TYPE_ERR;
 			argv->int32 = prog->errCode;
 		}
@@ -1319,7 +1369,8 @@ Bool scriptExecute(STRPTR progName, int argc, Variant argv)
 		}
 		return True;
 	}
-	return False;
+	/* TYPE_ERR means the script exists, but there was an error compiling it to bytecode */
+	return argv->type == TYPE_ERR;
 }
 
 /* no need to bloat this file */

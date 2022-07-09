@@ -14,6 +14,7 @@
 #ifdef SITGLLIB_H
 void scriptShow(SIT_Widget app);
 int  scriptCheck(SIT_Widget, APTR, APTR);
+void scriptShowProgram(SIT_Widget, int progId, int line);
 #endif
 Bool scriptCancelRename(void);
 void scriptCommitChanges(void);
@@ -82,6 +83,7 @@ enum /*  extra error codes from script */
 	PERR_MissingEnd,
 	PERR_MissingSeparator,
 	PERR_StdoutFull,
+	PERR_StackOverflow
 };
 
 void scriptToByteCode(ProgByteCode prog, DATA8 source);

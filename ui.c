@@ -146,7 +146,12 @@ static int copyLine(SIT_Widget w, APTR cd, APTR ud)
 	{
 		RowTag tag;
 		SIT_GetValues(w, SIT_RowTag(row), &tag, NULL);
-		if (tag && tag != TAG_STDOUT)
+		if (tag == TAG_STDOUT)
+		{
+			text = SIT_ListGetCellText(ctrls.list, 0, row);
+			while (isspace(*text)) text ++;
+		}
+		else if (tag)
 		{
 			/* result line */
 			text = alloca(128);
@@ -206,6 +211,19 @@ void formatExprToList(Variant v, STRPTR varName)
 
 void addOutputToList(STRPTR line)
 {
+	if (*line == '\t')
+	{
+		/* convert to spaces to line up with results */
+		STRPTR dup = alloca(strlen(line) + 4);
+		strcpy(dup, "   ");
+		strcat(dup, line + 1);
+		line = dup;
+	}
+	/* ctrl character: convert them to spaces */
+	STRPTR cleanup;
+	for (cleanup = line; *cleanup; cleanup ++)
+		if (*cleanup < 32) *cleanup = 32;
+
 	int item = SIT_ListInsertItem(ctrls.list, ctrls.insertAt, TAG_STDOUT, line);
 	SIT_SetValues(ctrls.list, SIT_MakeVisible, item, NULL);
 	if (ctrls.insertAt >= 0) ctrls.insertAt ++;
@@ -596,6 +614,24 @@ static int setTab(SIT_Widget w, APTR cd, APTR ud)
 	return 1;
 }
 
+/* SITE_OnActivate on a listbox entry */
+static int gotoErrorLine(SIT_Widget w, APTR cd, APTR ud)
+{
+	RowTag tag;
+	int    row;
+	SIT_GetValues(w, SIT_SelectedIndex, &row, NULL);
+	SIT_GetValues(w, SIT_RowTag(row), &tag, NULL);
+
+	if (tag && tag != TAG_STDOUT && tag->res.type == TYPE_ERR && tag->res.int32 > 31)
+	{
+		appcfg.mode = MODE_PROG;
+		scriptShowProgram(ctrls.app, tag->res.int32 >> 13, (tag->res.int32 >> 5) & 255);
+		setTab(w, NULL, NULL);
+	}
+	return 1;
+}
+
+
 /* if checkbox is checked, "disabled" nearby label */
 static int disaLabel(SIT_Widget w, APTR cd, APTR ud)
 {
@@ -729,7 +765,7 @@ static int about(SIT_Widget w, APTR cd, APTR ud)
 	SIT_OnMouse * msg = cd;
 	if (msg->state == SITOM_ButtonPressed && msg->button == SITOM_ButtonLeft)
 	{
-		SIT_Widget diag = SIT_CreateWidget("defunits", SIT_DIALOG, w,
+		SIT_Widget diag = SIT_CreateWidget("about", SIT_DIALOG, w,
 			SIT_DialogStyles, SITV_Plain | SITV_Transcient | SITV_Modal,
 			SIT_AccelTable,   defAccels,
 			NULL
@@ -740,7 +776,8 @@ static int about(SIT_Widget w, APTR cd, APTR ud)
 			"<label name=author.hdr title='Written by T.Pierron' top=WIDGET,appname,0.5em left=", SITV_AttachCenter, ">"
 			"<label name=tools.hdr title='Build on " PLATFORM " using " COMPILER "<br>" __DATE__ "' top=WIDGET,author,0.5em left=FORM right=FORM>"
 			"<label name=license title='Free software under terms of 2-clause BSD<br>No warranty, use at your own risk' top=WIDGET,tools,0.5em left=FORM right=FORM>"
-			"<button name=ok title=Ok right=FORM top=WIDGET,license,0.5em buttonType=", SITV_CancelButton, ">"
+			"<label name=font.hdr title=", "Font: <a href='https://www.dafont.com/led-calculator.font'>LED Calculator</a> by Colonel Sanders", "top=WIDGET,license,0.5em>"
+			"<button name=ok title=Ok right=FORM top=WIDGET,font,0.5em buttonType=", SITV_CancelButton, ">"
 		);
 
 		SIT_ManageWidget(diag);
@@ -879,8 +916,8 @@ static void createUI(SIT_Widget app)
 		SIT_SetValues(ctrls.edit, SIT_Title, graphGetFunc(), NULL);
 
 	SIT_AddCallback(ctrls.expr,  SITE_OnActivate, setTab, NULL);
-	SIT_AddCallback(ctrls.graph, SITE_OnActivate, setTab, (APTR) 1);
-	SIT_AddCallback(ctrls.prog,  SITE_OnActivate, setTab, (APTR) 2);
+	SIT_AddCallback(ctrls.graph, SITE_OnActivate, setTab, NULL);
+	SIT_AddCallback(ctrls.prog,  SITE_OnActivate, setTab, NULL);
 	SIT_AddCallback(ctrls.light, SITE_OnActivate, disaLabel, SIT_GetById(app, "dark"));
 
 	SIT_AddCallback(SIT_GetById(app, "units"), SITE_OnClick,    editUnits, NULL);
@@ -889,7 +926,8 @@ static void createUI(SIT_Widget app)
 	SIT_AddCallback(SIT_GetById(app, "help"),  SITE_OnActivate, showHelp, NULL);
 	SIT_AddCallback(SIT_GetById(app, "cls"),   SITE_OnActivate, redirect, (APTR) ACTION_DELALL);
 	SIT_AddCallback(SIT_GetById(app, "check"), SITE_OnActivate, scriptCheck, NULL);
-	SIT_AddCallback(ctrls.list,  SITE_OnChange, copyLine, NULL);
+	SIT_AddCallback(ctrls.list,  SITE_OnChange,   copyLine, NULL);
+	SIT_AddCallback(ctrls.list,  SITE_OnActivate, gotoErrorLine, NULL);
 	SIT_AddCallback(ctrls.calc,  SITE_OnActivate, redirect, (APTR) ACTION_ACCEPT);
 	SIT_SetValues(ctrls.list, SIT_CellPaint, highlightError, NULL);
 
@@ -1040,7 +1078,7 @@ int main(int nb, char * argv[])
 		SIT_DefSBSize,   SITV_Em(0.9),
 		SIT_DefSBArrows, SITV_NoArrows,
 		SIT_RefreshMode, SITV_RefreshAsNeeded,
-		SIT_AddFont,     "sans-serif", "resources/EHSMB.TTF",
+		SIT_AddFont,     "sans-serif", "resources/LEDCalculator.TTF",
 		SIT_ExitCode,    &exitProg,
 		NULL
 	);
