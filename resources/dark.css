@@ -5,10 +5,12 @@
  */
 html    { color: #dfdfdf; font-size: 3.5vw; background: linear-gradient(to bottom left, #555, #222); padding: 0.5em 1em }
 .dim    { color: white; padding: 1em; text-shadow: 0.1em 0.1em #888; font-size: 1.2em }
-::link,
-.alt    { color: #96acc4 }
 hdr,
-.danger { color: #e37655 }
+.danger { color: #e37655; text-transform: uppercase }
+sec     { color: yellow }
+::link  { color: #96acc4 }
+ok      { padding: 0 0.2em; border-radius: 0.5em; background: #2c2 url(mask:checkmark.png) 50% 50% no-repeat;
+          background-size: 60% 60%; color: white; vertical-align: middle }
 
 #units:hover, #title:hover {
 	text-decoration:  underline
@@ -27,16 +29,13 @@ form label.hdr {
 	color:            #ccc
 }
 label {
-	font-weight:      bold;
 	color:            #c3f2ff;
 	text-shadow:      0 0 10px #888, 0 0 10px #888;
+	text-transform:   uppercase
 }
 label.dis {
 	color:            rgba(#c3f2ff, 0.5);
 	text-shadow:      none
-}
-label.danger {
-	color:            #e36e86
 }
 button, toggle {
 	padding:          0.3em 0.5em;
@@ -129,7 +128,7 @@ checkbox box {
 	border-radius:    0.5em;
 	color:            black;
 	background:       no-repeat url(mask:circle.png) 10% 45%, #bdc2a4;
-	background-size:  35%;
+	background-size:  18%;
 }
 checkbox:checked {
 	color:            #c3f2ff;

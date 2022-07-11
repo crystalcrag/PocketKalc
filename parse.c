@@ -891,7 +891,7 @@ static int MakeOp(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb, APT
 			if (arg2->value.type != TYPE_STR)
 				arg3 = arg1, arg1 = arg2, arg2 = arg3, invert = True;
 			if (arg1->value.type != TYPE_STR)
-				ToString(&arg1->value, arg1->value.string = number, sizeof number);
+				ToString(&arg1->value, number, sizeof number), arg1->value.string = number;
 
 			arg3 = MyCalloc(buffer, sizeof *arg3 + strlen(arg1->value.string) + strlen(arg2->value.string) + 1);
 			if (arg3 == NULL) THROW(PERR_NoMem);
@@ -1029,7 +1029,7 @@ static int MakeOp(DATA8 buffer, Stack * values, Stack * oper, ParseExpCb cb, APT
 		break;
 	case 3: /* increment ++ */
 	case 4: /* decrement -- */
-		arg2 = NewNumber(buffer, TYPE_INT, 1UL);
+		arg2 = NewNumber(buffer, TYPE_INT32, 1);
 		// no break;
 	case 26: case 27: case 28: case 29: case 30: // *=, /=, %=, +=, -=
 	case 31: case 32: case 33: case 34: case 35: // <<=, >>=, &=, ^=, |=
@@ -1474,7 +1474,8 @@ Bool ByteCodeExe(DATA8 start, DATA8 * end, Bool isTrue, ParseExpCb cb, APTR data
 				MakeOpArray(buffer, &values, &val, cb, data);
 			else
 				MakeOp(buffer, &values, &val, cb, data);
-			break;
+			start += 2;
+			continue;
 		case TYPE_FUN:
 			{
 				Stack ret = MyCalloc(buffer, sizeof *ret), list, prev;
@@ -1486,8 +1487,9 @@ Bool ByteCodeExe(DATA8 start, DATA8 * end, Bool isTrue, ParseExpCb cb, APTR data
 				ret->value.string = start + 3;
 				val = NewOperator(buffer, &functionCall);
 				MakeOp(buffer, &values, &val, cb, data);
+				start += 3 + start[2];
 			}
-			break;
+			continue;
 		case TYPE_INT:
 		case TYPE_DBL:
 			memcpy(&num.int64, start + 3, 8);
@@ -1499,21 +1501,19 @@ Bool ByteCodeExe(DATA8 start, DATA8 * end, Bool isTrue, ParseExpCb cb, APTR data
 			PushStack(&values, NewNumber(buffer, start[0], num.int64));
 			break;
 		case TYPE_STR:
-			val = MyCalloc(buffer, sizeof *val);
-			val->value.type = TYPE_STR;
-			val->value.string = start + 3;
-			PushStack(&values, val);
-			break;
 		case TYPE_IDF:
 			val = MyCalloc(buffer, sizeof *val);
-			val->value = num;
+			val->value.type = start[0];
+			val->value.string = start + 3;
 			PushStack(&values, val);
 		}
+		if (values && values->value.type == TYPE_ERR)
+			break;
 		start += (start[1] << 8) | start[2];
 	}
 	if (isTrue)
 		/* only check if the result is "True" */
-		isTrue = IsNull(&values->value);
+		isTrue = ! IsNull(&values->value);
 
 	/* notify final results */
 	if (values)

@@ -241,7 +241,7 @@ static void redoOperation(STRPTR expr, int startRow)
 		SIT_GetValues(ctrls.list, SIT_RowTag(startRow), &tag, NULL);
 		if (tag)
 		{
-			if (tag->var && tag->var[0] == '$')
+			if (tag != TAG_STDOUT && tag->var && tag->var[0] == '$')
 			{
 				/* temp var name: keep it assigned to same name */
 				data.assignTo = tag->var;
@@ -340,21 +340,17 @@ static Bool addExprToList(STRPTR expr)
 		if (tag == NULL)
 		{
 			/* expression selected: modify this line */
-			STRPTR old = SIT_ListGetCellText(ctrls.list, 0, index);
-			if (strcasecmp(old, expr))
+			SIT_ListSetCell(ctrls.list, index, 0, DontChangePtr, DontChange, expr);
+			redoOperation(expr, index);
+
+			/* check if there was a meaningful result */
+			SIT_GetValues(ctrls.list, SIT_RowTag(index+1), &tag, NULL);
+			if (tag && tag != TAG_STDOUT && tag->res.type != TYPE_ERR && tag->var)
 			{
-				SIT_ListSetCell(ctrls.list, index, 0, DontChangePtr, DontChange, expr);
-				redoOperation(expr, index);
-
-				/* check if there was a meaningful result */
-				SIT_GetValues(ctrls.list, SIT_RowTag(index+1), &tag, NULL);
-				if (tag && tag != TAG_STDOUT && tag->res.type != TYPE_ERR && tag->var)
-				{
-					/* we might have to propagate the result to the following rows */
-					propagateResult(tag, index + 1);
-				}
-
+				/* we might have to propagate the result to the following rows */
+				propagateResult(tag, index + 1);
 			}
+
 			/* keep content of edit field */
 			return False;
 		}
@@ -362,7 +358,7 @@ static Bool addExprToList(STRPTR expr)
 	ctrls.insertAt = -1;
 	SIT_SetValues(ctrls.list, SIT_SelectedIndex, -1, NULL);
 	SIT_ListInsertItem(ctrls.list, -1, NULL, expr);
-	scriptResetStdout();
+	scriptReset();
 	evalExpr(expr, &data);
 	return True;
 }
@@ -949,7 +945,7 @@ static void createUI(SIT_Widget app)
 			else data.assignTo = NULL;
 			ctrls.insertAt = -1;
 			SIT_ListInsertItem(ctrls.list, -1, NULL, exprList + 1);
-			scriptResetStdout();
+			scriptReset();
 			evalExpr(exprList + 1, &data);
 			exprList = strchr(exprList, 0) + 1;
 		}

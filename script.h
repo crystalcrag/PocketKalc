@@ -20,11 +20,13 @@ Bool scriptCancelRename(void);
 void scriptCommitChanges(void);
 Bool scriptExecute(STRPTR prog, int argc, Variant argv);
 void scriptTest(void);
-void scriptResetStdout(void);
+void scriptReset(void);
 
 
 /* per compiled program, use sub-functions if you reach this limit */
 #define MAX_SCRIPT_SIZE      65536
+#define MAX_OUTPUT_SIZE      2048
+#define MAX_CALL_STACK       5
 
 /*
  * private datatypes below that point
@@ -34,6 +36,7 @@ typedef struct ProgByteCode_t *    ProgByteCode;
 typedef struct ProgLabel_t *       ProgLabel;
 typedef struct ProgState_t *       ProgState;
 typedef struct ProgOutput_t        ProgOutput_t;
+typedef struct SIT_OnEditChange_t  ProgEdit_t;
 struct ProgByteCode_t
 {
 	struct ListNode_t  node;

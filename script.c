@@ -25,7 +25,8 @@ struct
 	ProgOutput_t output;
 	Bool         curProgChanged, showError;
 	int          cancelEdit, autoIndentPos;
-	int          oldStat[9];
+	int          callStack, stopNow;
+	ProgEdit_t   oldStat;
 
 }	script;
 
@@ -120,11 +121,12 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 {
 	DATA8 text;
 	TEXT  buffer[32];
-	int * stat = cd;
 
-	if (memcmp(script.oldStat, stat, sizeof script.oldStat) == 0)
+	ProgEdit_t * stat = cd;
+
+	if (memcmp(&script.oldStat, stat, sizeof script.oldStat) == 0)
 		return 0;
-	memcpy(script.oldStat, stat, sizeof script.oldStat);
+	memcpy(&script.oldStat, stat, sizeof script.oldStat);
 
 	SIT_GetValues(w, SIT_Title, &text, NULL);
 
@@ -136,12 +138,13 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 	}
 
 	/* auto-indent */
-	if (stat[6] - 1 == script.autoIndentPos && stat[6] > 0 && text[stat[6]-1] == '\n' && (text[stat[6]] == '\n' || stat[6] == stat[7]))
+	if (stat->totalBytes - 1 == script.autoIndentPos && stat->caretOffset > 0 && text[stat->caretOffset-1] == '\n' &&
+	   (text[stat->caretOffset] == '\n' || stat->caretOffset == stat->totalBytes))
 	{
 		/* added a newline */
 		DATA8 prev, end;
 		/* get to start of previous line */
-		for (prev = text + stat[6] - 2; prev > text && prev[0] != '\n'; prev --);
+		for (prev = text + stat->caretOffset - 2; prev > text && prev[0] != '\n'; prev --);
 		if (prev > text) prev ++;
 		for (end = prev; *end != '\n' && isspace(*end); end ++);
 		int max = end-prev+1;
@@ -151,17 +154,17 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 		CopyString(buffer, prev, max);
 		SIT_SetValues(w, SIT_EditAddText, buffer, NULL);
 	}
-	script.autoIndentPos = stat[7];
+	script.autoIndentPos = stat->totalBytes;
 
 	/* highlight matching bracket */
-	if (stat[7] > 0)
+	if (stat->totalBytes > 0)
 	{
 		static char brackets[] = "([{)]}";
-		DATA8  scan = text + stat[6];
+		DATA8  scan = text + stat->caretOffset;
 		STRPTR sep  = scan[0] ? strchr(brackets, scan[0]) : NULL;
 		int    pos  = -1;
 
-		if (sep == NULL && stat[6] > 0)
+		if (sep == NULL && stat->caretOffset > 0)
 			/* check one character before */
 			sep = strchr(brackets, scan[-1]), scan --;
 
@@ -173,7 +176,7 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 			int   depth = 0;
 			if (sep < brackets + 3)
 			{
-				for (chr2 = sep[3], eof = text + stat[7]; scan < eof; scan ++)
+				for (chr2 = sep[3], eof = text + stat->totalBytes; scan < eof; scan ++)
 				{
 					if (scan[0] == chr1) depth ++; else
 					if (scan[0] == chr2)
@@ -201,15 +204,15 @@ static int scriptEditStat(SIT_Widget w, APTR cd, APTR ud)
 	else SYN_MatchBracket(w, 0);
 
 	/* show stat about file */
-	sprintf(buffer, "L:%d C:%d", stat[1]+1, stat[0]);
+	sprintf(buffer, "L:%d C:%d", stat->caretRowFile+1, stat->caretColFile);
 	SIT_SetValues(script.statPos,  SIT_Title, buffer, NULL);
 
 	if (script.curEdit->changed)
-		stat[8] = 1;
+		stat->undoSavePoint = 1;
 
-	sprintf(buffer, "%dL %dB%c", stat[5], stat[7], stat[8] ? '*' : ' ');
+	sprintf(buffer, "%dL %dB%c", stat->totalLines, stat->totalBytes, stat->undoSavePoint ? '*' : ' ');
 	SIT_SetValues(script.statSize, SIT_Title, buffer, NULL);
-	script.curProgChanged = stat[8];
+	script.curProgChanged = stat->undoSavePoint;
 
 	return 1;
 }
@@ -1153,12 +1156,12 @@ ProgByteCode scriptGenByteCode(STRPTR prog, Variant errCode)
 	if (script.curEdit == chunk && script.curProgChanged)
 		scriptSaveChanges(chunk);
 
+	crc = crc32(0, chunk->content, -1);
 	/* check if it is already compiled and up to date */
 	for (list = HEAD(script.programs); list; NEXT(list))
 	{
 		if (strcasecmp(list->name, prog) == 0)
 		{
-			crc = crc32(0, chunk->content, -1);
 			if (list->crc32 == crc)
 				return list;
 
@@ -1178,6 +1181,7 @@ ProgByteCode scriptGenByteCode(STRPTR prog, Variant errCode)
 	list->crc32 = crc;
 
 	/* convert to bytecode */
+	fprintf(stderr, "regen byte code for prog %s\n", list->name);
 	scriptToByteCode(list, chunk->content);
 	if (list->errCode == 0)
 		return list;
@@ -1199,7 +1203,10 @@ static Bool scriptAddOutput(STRPTR output)
 	if (length + script.output.usage + 1 > script.output.max)
 	{
 		int max = (length + script.output.usage + 512) & ~511;
-		if (max > 64*1024) return False;
+		if (max > MAX_OUTPUT_SIZE)
+			max = MAX_OUTPUT_SIZE;
+		if (max == script.output.max)
+			return False;
 		script.output.buffer = realloc(script.output.buffer, max);
 		script.output.max = max;
 	}
@@ -1276,9 +1283,15 @@ static void scriptGetVar(STRPTR name, Variant v, int store, APTR data)
 	}
 }
 
-void scriptResetStdout(void)
+/* must be called before evalutating an expression using evalExpr() */
+void scriptReset(void)
 {
 	script.output.usage = 0;
+	script.callStack = 0;
+	script.stopNow = 0;
+	ProgByteCode prog;
+	for (prog = HEAD(script.programs); prog; NEXT(prog))
+		prog->errCode = prog->errLine = 0;
 }
 
 void addOutputToList(STRPTR line);
@@ -1292,25 +1305,49 @@ Bool scriptExecute(STRPTR progName, int argc, Variant argv)
 	{
 		/* default variables */
 		VariantBuf args = {.type = TYPE_ARRAY, .lengthFree = argc, .array = alloca(sizeof argv * argc)};
+		SymTable_t oldSymTable;
 		DATA8 inst, eof;
 		int i, retValSet;
+
+		//scriptDebug(&prog->bc);
+		//RECURSIVE(1)
+
+		/* prevent infinite recursion loop */
+		if (script.callStack > MAX_CALL_STACK)
+		{
+			prog->errCode = PERR_StackOverflow;
+			script.stopNow = 1;
+			argv->type = TYPE_ERR;
+			argv->int32 = prog->errCode;
+			return True;
+		}
+		script.callStack ++;
 
 		for (i = 0; i < argc; i ++)
 			args.array[i] = argv + i;
 
 		prog->returnVal = argv;
+		prog->errLine = 0;
+		/* each new script instance will have its own variable environment */
+		oldSymTable = prog->symbols;
+		memset(&prog->symbols, 0, sizeof prog->symbols);
 		symTableAdd(&prog->symbols, "ARGV", &args);
 
-		for (inst = prog->bc.code, eof = inst + prog->bc.size, retValSet = 0; inst < eof && ! prog->errCode; )
+		for (inst = prog->bc.code, eof = inst + prog->bc.size, retValSet = 0; inst < eof && ! prog->errCode && ! script.stopNow; )
 		{
 			switch (inst[0]) {
 			case STOKEN_IF:
 				i = (inst[1] << 8) | inst[2];
 				prog->curInst = STOKEN_SPACES;
-				if (! ByteCodeExe(inst + 3, &inst, True, scriptGetVar, prog))
+				if (inst[3] != STOKEN_EXPR)
+				{
+					prog->errCode = PERR_InvalidOperation;
+					break;
+				}
+				if (! ByteCodeExe(inst + 4, &inst, True, scriptGetVar, prog))
 					/* skip if block */
 					inst = prog->bc.code + i;
-				break;
+				continue;
 			case STOKEN_EXPR:
 				/* don't care about result, user has to assign this to a variable */
 				ByteCodeExe(inst + 1, &inst, False, scriptGetVar, prog);
@@ -1323,7 +1360,7 @@ Bool scriptExecute(STRPTR progName, int argc, Variant argv)
 				continue;
 			case STOKEN_GOTO:
 				inst = prog->bc.code + ((inst[1] << 8) | inst[2]);
-				break;
+				continue;
 			case STOKEN_EXIT:
 				goto break_all;
 				break;
@@ -1341,14 +1378,16 @@ Bool scriptExecute(STRPTR progName, int argc, Variant argv)
 		}
 
 		break_all:
+		script.callStack --;
 		symTableFree(&prog->symbols);
+		prog->symbols = oldSymTable;
 		if (prog->errCode > 0)
 		{
 			/* bubble the error back to the caller */
 			argv->type = TYPE_ERR;
 			argv->int32 = prog->errCode;
 		}
-		else
+		else if (script.callStack == 0)
 		{
 			/* all is good so far, dump output to main interface */
 			DATA8 output, next;

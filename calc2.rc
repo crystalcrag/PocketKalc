@@ -1,2 +1,26 @@
 
 1 ICON "icon.ico"
+
+1 MANIFEST "Calc.exe.Manifest"
+
+1 VERSIONINFO
+FILEVERSION 1,1,0,0
+PRODUCTVERSION 1,1,0,0
+FILETYPE 1
+{
+	BLOCK "StringFileInfo"
+	{
+		BLOCK "040904b0"
+		{
+			VALUE "FileDescription",  "PocketKalc"
+			VALUE "InternalName",     "PocketKalc"
+			VALUE "LegalCopyright",   "BSD Licensed"
+			VALUE "OriginalFilename", "Kalc.exe"
+			VALUE "ProductName",      "PocketKalc"
+		}
+	}
+	BLOCK "VarFileInfo"
+	{
+		VALUE "Translation", 0x0409, 1200
+	}
+}
