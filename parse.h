@@ -52,13 +52,13 @@ struct Variant_t
 		int lengthFree;          /* TYPE_STRING, TYPE_ARRAY */
 	};
 	union {
-		int64_t   int64;
-		int       int32;
-		double    real64;
-		float     real32;
-		STRPTR    string;
-		Variant * array;
-		APTR      ope;
+		int64_t int64;
+		int     int32;
+		double  real64;
+		float   real32;
+		STRPTR  string;
+		Variant array;
+		APTR    ope;
 	};
 };
 

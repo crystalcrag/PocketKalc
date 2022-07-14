@@ -1086,7 +1086,7 @@ int main(int nb, char * argv[])
 
 	glViewport(0, 0, appcfg.width, appcfg.height);
 
-	FrameSetFPS(50);
+	FrameSetFPS(30);
 	while (! exitProg)
 	{
 		while (SDL_PollEvent(&event))

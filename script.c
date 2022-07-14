@@ -1304,13 +1304,12 @@ Bool scriptExecute(STRPTR progName, int argc, Variant argv)
 	if (prog)
 	{
 		/* default variables */
-		VariantBuf args = {.type = TYPE_ARRAY, .lengthFree = argc, .array = alloca(sizeof argv * argc)};
+		VariantBuf args = {.type = TYPE_ARRAY, .lengthFree = argc, .array = alloca(sizeof *argv * argc)};
 		SymTable_t oldSymTable;
 		DATA8 inst, eof;
 		int i, retValSet;
 
 		//scriptDebug(&prog->bc);
-		//RECURSIVE(1)
 
 		/* prevent infinite recursion loop */
 		if (script.callStack > MAX_CALL_STACK)
@@ -1324,7 +1323,7 @@ Bool scriptExecute(STRPTR progName, int argc, Variant argv)
 		script.callStack ++;
 
 		for (i = 0; i < argc; i ++)
-			args.array[i] = argv + i;
+			args.array[i] = argv[i];
 
 		prog->returnVal = argv;
 		prog->errLine = 0;

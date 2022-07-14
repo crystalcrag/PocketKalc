@@ -45,18 +45,52 @@ uint32_t crc32(uint32_t crc, DATA8 buf, int max)
 	return crc ^ 0xffffffffL;
 }
 
+static void symFreeVar(Result var)
+{
+	if ((var->bin.type == TYPE_STR || var->bin.type == TYPE_ARRAY) && VAR_TOFREE(&var->bin))
+		free(var->bin.array);
+}
+
 void symTableAssign(Result var, Variant v)
 {
-	if (var->bin.type == TYPE_STR)
-	{
-		if (var->bin.string == v->string)
+	switch (v->type) {
+	case TYPE_STR:
+		if (var->bin.type == TYPE_STR && var->bin.string == v->string)
 			/* already done */
 			return;
-		free(var->bin.string);
-	}
-	var->bin = *v;
-	if (v->type == TYPE_STR)
+
+		symFreeVar(var);
+		var->bin = *v;
 		var->bin.string = strdup(v->string);
+		VAR_SETFREE(&var->bin);
+		break;
+
+	case TYPE_ARRAY:
+		if (var->bin.type == TYPE_ARRAY && var->bin.array == v->array)
+			return;
+
+		/* need to duplicate whole array */
+		int i, size;
+		for (i = VAR_LENGTH(v), size = sizeof *v * i, i --; i >= 0; i --)
+			if (v->array[i].type == TYPE_STR) size += VAR_LENGTH(v->array+i);
+		symFreeVar(var);
+		var->bin = *v;
+		var->bin.array = malloc(size);
+		VAR_SETFREE(&var->bin);
+		DATA8 strbuf = (DATA8) (var->bin.array + VAR_LENGTH(v));
+		for (size = VAR_LENGTH(v), i = 0, v = v->array; i  <size; i ++, v ++)
+		{
+			var->bin.array[i] = *v;
+			if (v->type == TYPE_STR)
+				memcpy(strbuf, v->string, VAR_LENGTH(v) + 1), strbuf += VAR_LENGTH(v) + 1;
+		}
+		break;
+
+	default:
+		/* overwriting array/string */
+		symFreeVar(var);
+		var->bin = *v;
+	}
 }
 
 #define MAX_HASH_CAPA      19
@@ -122,7 +156,8 @@ void symTableFree(SymTable syms)
 		for (i = 0; i < MAX_HASH_CAPA; i ++)
 		{
 			Result res = list->symbols + i;
-			if (res->bin.type == TYPE_STR)
+			if (VAR_TOFREE(&res->bin))
+				/* array or string actually */
 				free(res->bin.string);
 		}
 

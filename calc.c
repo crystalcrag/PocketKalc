@@ -131,7 +131,12 @@ void formatResult(Variant v, STRPTR varName, STRPTR out, int max)
 		return;
 	}
 
-	if (varName)
+	if (varName == (STRPTR) -1)
+	{
+		/* keep format mode */
+		;
+	}
+	else if (varName)
 	{
 		int pos = StrCat(out, max, 0, "   ");
 		pos = StrCat(out, max, 0, varName);
@@ -275,6 +280,29 @@ void formatResult(Variant v, STRPTR varName, STRPTR out, int max)
 		}
 		/* format as a C-string */
 		else formatString(out, v->string, max);
+		break;
+
+	case TYPE_ARRAY:
+		{
+			int i, items;
+			if (max > 0)
+				*out ++ = '[', max --;
+			for (i = 0, items = VAR_LENGTH(v) - 1; i <= items; i ++)
+			{
+				formatResult(v->array + i, (STRPTR) -1, out, max);
+				while (*out) out ++, max --;
+				if (i == items || max == 0) break;
+				switch (max) {
+				default: out[0] = ','; out[1] = ' '; out += 2; max -= 2; break;
+				case 1:  out[0] = ','; max --; out ++; break;
+				case 0:  break;
+				}
+			}
+			if (max > 0)
+				*out ++ = ']', max --;
+			if (max > 0) out[0] = 0;
+			else out[-1] = 0;
+		}
 	}
 	if (suffix)
 		StrCat(out, max, 0, suffix);
@@ -442,8 +470,13 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 			if (store == 0)
 			{
 				/* non-existant variable == integer 0 */
-				if (var) memcpy(v, &var->bin, sizeof *v);
-				else     memset(v, 0, sizeof *v);
+				if (var)
+				{
+					memcpy(v, &var->bin, sizeof *v);
+					if (v->type == TYPE_ARRAY || v->type == TYPE_STR)
+						v->lengthFree &= 0x0fffffff;
+				}
+				else memset(v, 0, sizeof *v);
 			}
 			else
 			{
@@ -465,6 +498,7 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 			/* time64 is a Microsoft msvcrt function :-/ */
 			case 4: v->int64 = _time64(0); v->type = TYPE_INT; break;
 			}
+			v->unit = 0;
 		}
 		else /* 32bit constants */
 		{
@@ -475,6 +509,7 @@ void parseExpr(STRPTR name, Variant v, int store, APTR data)
 			case 3: /* time, now */
 			case 4: v->int32  = time(0); v->type = TYPE_INT32; break;
 			}
+			v->unit = 0;
 		}
 	}
 }
